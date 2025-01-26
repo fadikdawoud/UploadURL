@@ -1,0 +1,187 @@
+const imageInput = document.getElementById("imageInput");
+const cardContainer = document.querySelector(".section");
+const dropArea = document.getElementById("dropArea");
+let files = [];
+
+// Load images from local storage on page load
+window.onload = () => {
+    const savedFiles = JSON.parse(localStorage.getItem("images"));
+    if (savedFiles) {
+        files = savedFiles;
+        showImages();
+    }
+};
+
+// Handle paste event
+document.addEventListener("paste", (e) => {
+    const items = e.clipboardData.items;
+
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+
+        if (item.type.indexOf("image") !== -1) {
+            const blob = item.getAsFile();
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                files.push(event.target.result);
+                showImages();
+                saveToLocalStorage();
+            };
+            reader.readAsDataURL(blob);
+        }
+    }
+});
+
+// Drag and drop event listeners
+dropArea.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropArea.classList.add("dragover");
+});
+
+dropArea.addEventListener("dragleave", () => {
+    dropArea.classList.remove("dragover");
+});
+
+dropArea.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    dropArea.classList.remove("dragover");
+
+    // Check if the dropped item is a file or a URL
+    if (e.dataTransfer.files.length > 0) {
+        const droppedFiles = e.dataTransfer.files;
+        handleDroppedFiles(droppedFiles);
+    } else if (e.dataTransfer.types.includes("text/uri-list")) {
+        const droppedUrl = e.dataTransfer.getData("text/uri-list");
+
+        // Check if the URL points to an image
+        if (isImageUrl(droppedUrl)) {
+            handleDroppedUrl(droppedUrl);
+        } else {
+            console.error("Dropped URL is not an image.");
+        }
+    }
+});
+
+imageInput.addEventListener("change", () => {
+    const selectedFiles = imageInput.files;
+    handleDroppedFiles(selectedFiles);
+});
+
+const handleDroppedFiles = (fileList) => {
+    for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            files.push(event.target.result);
+            showImages();
+            saveToLocalStorage();
+        };
+        reader.readAsDataURL(file);
+    }
+};
+
+const handleDroppedUrl = async (url) => {
+    files.push(url);
+    showImages();
+    saveToLocalStorage();
+};
+
+const isImageUrl = (url) => {
+    // Add more comprehensive checks if needed
+    return url.toLowerCase().match(/\.(jpeg|jpg|gif|png)$/) !== null;
+};
+
+const showImages = () => {
+    let images = "";
+
+    files.forEach((e, i) => {
+        images += `
+            <div class="hidden">
+                <div class="holder">
+                    <img class="imglook" src="${e}">
+                    <span onclick="deleteImage(${i})">&#10006;</span>
+                </div>
+            </div>`;
+    });
+
+    cardContainer.innerHTML = images;
+    observeHiddenElements();
+
+    // PopUp Preview code...
+    document.querySelectorAll(".holder .imglook").forEach(thisOne =>{
+        thisOne.onclick = () =>{
+            document.querySelector(".PopUpPreview").style.display = "block";
+            document.querySelector(".PopUpPreview img").src = thisOne.getAttribute("src")
+        }
+    })
+
+    document.querySelector(".PopUpPreview span").onclick = () =>{
+        document.querySelector(".PopUpPreview").style.display = "none";
+    }
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+            document.querySelector(".PopUpPreview").style.display = "none";
+        }
+    });
+};
+
+const deleteImage = (index) => {
+    files.splice(index, 1);
+    showImages();
+    saveToLocalStorage();
+};
+
+const observeHiddenElements = () => {
+    const hiddenElements = document.querySelectorAll('.hidden');
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('showx');
+            } else {
+                entry.target.classList.remove('showx');
+            }
+        });
+    });
+
+    hiddenElements.forEach((element) => {
+        observer.observe(element);
+    });
+};
+
+const saveToLocalStorage = () => {
+    localStorage.setItem("images", JSON.stringify(files));
+};
+
+// Save images to local storage before the page unloads
+window.addEventListener("beforeunload", saveToLocalStorage);
+
+// Initial call to showImages to load any pre-existing images
+showImages();
+
+const handleKeyPress = (event) => {
+    if (event.key === "Enter") {
+        addImageUrl();
+    }
+};
+const addImageUrl = () => {
+    const imageUrlInput = document.getElementById("imageUrlInput");
+    const imageUrl = imageUrlInput.value.trim();
+
+    if (imageUrl !== "") {
+        files.push(imageUrl);
+        showImages();
+        saveToLocalStorage();
+        imageUrlInput.value = "";
+    }
+};
+
+const clearButton = document.getElementById("clearButton");
+const clearDatabaseAndFiles = () => {
+    if (confirm("Are you sure you want to delete all images?")) {
+        files = [];
+        showImages();
+        localStorage.removeItem("images");
+    }
+};
+clearButton.addEventListener("click", clearDatabaseAndFiles);

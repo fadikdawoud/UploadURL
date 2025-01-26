@@ -1,0 +1,302 @@
+*{
+    margin: 0;
+    padding: 0;
+}
+@font-face {
+    font-family: satoshi-reg;
+    src: url(assets/Satoshi-Light.ttf);
+}
+@font-face {
+    font-family: satoshi-bold;
+    src: url(assets/Satoshi-Bold.ttf);
+}
+body{
+    background-color: rgb(24, 24, 24);
+    /* background-color: rgb(235, 235, 235); */
+    padding-top: 150px;
+    padding-left: 40px;
+    padding-right: 40px;
+}
+.add-icon{
+    position: absolute;
+    top: 16px;
+    right: 108px;
+    width: 35px;
+    margin: 10px;
+    transition: transform 0.2s;
+    user-select: none;
+    z-index: 2;
+   /* antialiasing */
+    outline: 1px solid transparent;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+    will-change: transform;
+    perspective: 1000;
+    cursor: pointer;
+    transform-origin: center;
+    /* filter: invert(1); */
+}
+.add-icon:hover{
+    transform: translateY(-2px);
+}
+.logo{
+    width:48px;
+    height:48px;
+    fill: white;
+    position: absolute;
+    top: 24px;
+    left: 56px;
+    user-select: none;
+    transform: translateZ(0);
+}
+h1{
+    position: absolute;
+    top: 40px;
+    left: 50%;
+    transform: translate(-50% ,-50%);
+    font-family: satoshi-bold;
+    font-size: 36px;
+    text-align: center;
+    text-transform: uppercase;
+    user-select: none;
+    color: white;
+}
+h2{
+    position: absolute;
+    top: 72px;
+    left: 50%;
+    transform: translate(-50% ,-50%);
+    font-family: satoshi-reg;
+    font-size: 20px;
+    /* text-transform: uppercase; */
+    letter-spacing: 1.4px;
+    user-select: none;
+    color: white;
+}
+/* /////////////////////////////////////////////////////////// */
+section{
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    column-gap: 40px;
+    row-gap: 40px;
+}
+
+.holder{
+    width: 400px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 20px;
+    box-shadow: rgba(0, 0, 0, 0.25) 0px 13px 27px -5px, rgba(0, 0, 0, 0.3) 0px 8px 16px -8px;
+    overflow: hidden;
+    position: relative;
+    outline: none;
+    border: none;
+}
+
+.imglook, .holder a img{
+    width: 100%;
+    height: 100%;
+
+    object-fit: cover;
+    transition: transform 0.7s;
+    transition-delay: .2s;
+    transform: scale(1);
+    outline: none;
+    border: none;
+}
+
+gif-player {
+    width: 100%;
+    height: 100%;
+    object-fit: contain; /* Ensures proper containment of large GIFs */
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    align-self: center; /* Center-aligns vertically */
+    justify-self: center; /* Center-aligns horizontally */
+}
+
+
+.imglook:hover, .holder a img:hover {
+    transform: scale(1.05);
+}
+
+.holder a {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.holder span{
+    color: white;
+    position: absolute;
+    top: .1rem;
+    right: .5rem;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 10px;
+    mix-blend-mode: difference;
+}
+.holder span:active{
+    transform: scale(.6);
+}
+/* ////////////////////////////////////////////////////// */
+.hidden{
+    opacity: 1;
+}
+.showx{
+    opacity: 1;
+}
+/* ////////////////////////////////////////////////////// */
+.PopUpPreview{
+    position: fixed;
+    top: 0; left: 0;
+    background-color: rgba(0, 0, 0, 0.95);
+    height: 100vh;
+    width: 100vw;
+    z-index: 100;
+    display: none;
+    user-select: none;
+}
+.PopUpPreview span{
+    position: absolute;
+    top: 50px;
+    right: 50px;
+    font-size: 35px;
+    color: white;
+    transition: transform 0.2s;
+    user-select: none;
+    cursor: pointer;
+    z-index: 101;
+}
+.PopUpPreview span:hover{
+    transform: scale(1.05);
+}
+.PopUpPreview img{
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    width: 40%;
+    height: 100%;
+    object-fit: contain;
+    user-select: none;
+}
+@media print {
+    body {
+      background-color: rgb(235, 235, 235);
+    }
+    .holder span{
+        display:none;
+    }
+    .PopUpPreview span{
+        display:none;
+    }
+  }
+
+#imageUrlInput{
+    position: absolute;
+    top: 30px;
+    left: 40%;
+    width: 250px;
+    border-radius: 13px;
+    padding: 9px;
+    height: 10px;
+    color: rgb(27, 27, 27);
+    background-color: rgb(190, 176, 156);
+    border: none;
+    outline: none;
+    display: none;
+}
+.drop-area{
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+}
+
+#clearButton img{
+    width: 36x;
+    height: 36px;
+    filter: invert(1);
+}
+#clearButton{
+    background-color: transparent;
+    outline: none;
+    border: none;
+    
+    position: absolute;
+    top: 16px;
+    right: 40px;
+    width: fit-content;
+    height: fit-content;
+    margin: 10px;
+    transition: transform 0.2s;
+    user-select: none;
+    z-index: 2;
+   /* antialiasing */
+    outline: 1px solid transparent;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+    will-change: transform;
+    perspective: 1000;
+    cursor: pointer;
+    transform-origin: center;
+}
+#clearButton:hover{
+    transform: translateY(-2px);
+}
+#clearButton:active{
+    transform: scale(0.98);
+}
+/* /////////////////////////////////////////////////// */
+.link-holder {
+    height: fit-content;
+    background-color: rgb(39, 39, 39);
+    font-family: satoshi-bold;
+}
+
+.link-box {
+    padding: 40px 20px 20px 20px;
+    text-align: center;
+    font-size: 20px;
+    color: white;
+    text-decoration: none;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    line-height: 1.5;
+    white-space: normal;
+}
+
+/* //////////////////// */
+canvas{
+    width: 100%;
+    height: 200px ;
+
+    object-fit: cover;
+    transition: transform 0.7s;
+    transition-delay: .2s;
+    transform: scale(1);
+    outline: none;
+    border: 10px solid green;
+}
+gif-player {
+    max-width: 100%;
+    max-height: 400px;
+}
+.PopUpPreview gif-player{
+    max-width: 40%;
+    max-height: 100%;
+    position: absolute;
+    /* top: 20%; left: 0%; */
+    /* transform: translate(-50%,-50%); */
+    object-fit: contain;
+    user-select: none;
+}
+.popup-gif{
+    width: 100% !important;
+    height: 100% !important;
+}
