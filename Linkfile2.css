@@ -51,11 +51,11 @@ body{
 }
 h1{
     position: absolute;
-    top: 40px;
+    top: 32px;
     left: 50%;
     transform: translate(-50% ,-50%);
     font-family: satoshi-bold;
-    font-size: 36px;
+    font-size: 32px;
     text-align: center;
     text-transform: uppercase;
     user-select: none;
@@ -63,11 +63,11 @@ h1{
 }
 h2{
     position: absolute;
-    top: 72px;
+    top: 56px;
     left: 50%;
     transform: translate(-50% ,-50%);
     font-family: satoshi-reg;
-    font-size: 20px;
+    font-size: 18px;
     /* text-transform: uppercase; */
     letter-spacing: 1.4px;
     user-select: none;
