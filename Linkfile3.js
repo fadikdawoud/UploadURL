@@ -2,6 +2,7 @@ const imageInput = document.getElementById("imageInput");
 const cardContainer = document.querySelector(".section");
 const dropArea = document.getElementById("dropArea");
 let files = [];
+let currentPreviewIndex = -1; // Track current image index in preview mode
 
 // Load images from local storage on page load
 window.onload = () => {
@@ -241,36 +242,110 @@ const showImages = () => {
 
         if (!isYouTube) { // Prevent adding PopUpPreview for YouTube links
             thisOne.onclick = () => {
-                document.querySelector(".PopUpPreview").style.display = "block";
-                const previewContainer = document.querySelector(".PopUpPreview");
-
-                if (thisOne.tagName.toLowerCase() === "gif-player") {
-                    previewContainer.innerHTML = `
-                        <span>&#10006;</span>
-                        <gif-player src="${thisOne.getAttribute('src')}" class="popup-gif"></gif-player>
-                    `;
-                } else {
-                    previewContainer.innerHTML = `
-                        <span>&#10006;</span>
-                        <img src="${thisOne.getAttribute('src')}" alt="Preview">
-                    `;
-                }
-
-                document.querySelector(".PopUpPreview span").onclick = () => {
-                    document.querySelector(".PopUpPreview").style.display = "none";
-                };
+                // Find the index of this image in the files array
+                const imageId = thisOne.id;
+                const indexMatch = imageId.match(/\d+/);
+                currentPreviewIndex = indexMatch ? parseInt(indexMatch[0]) : 0;
+                
+                showPreview(currentPreviewIndex);
             };
-        }
-    });
-
-    document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") {
-            document.querySelector(".PopUpPreview").style.display = "none";
         }
     });
 };
 
+// Function to show preview for a specific index
+const showPreview = (index) => {
+    if (index < 0 || index >= files.length) return;
+    
+    const file = files[index];
+    const previewContainer = document.querySelector(".PopUpPreview");
+    previewContainer.style.display = "block";
+    
+    let previewContent = '';
+    
+    if (typeof file === "string") {
+        if (file.toLowerCase().endsWith(".gif")) {
+            previewContent = `
+                <span>&#10006;</span>
+                <gif-player src="${file}" class="popup-gif"></gif-player>
+            `;
+        } else {
+            previewContent = `
+                <span>&#10006;</span>
+                <img src="${file}" alt="Preview">
+            `;
+        }
+    } else if (file.type === "gif") {
+        previewContent = `
+            <span>&#10006;</span>
+            <gif-player src="${file.src}" class="popup-gif"></gif-player>
+        `;
+    } else if (file.type === "youtube") {
+        previewContent = `
+            <span>&#10006;</span>
+            <a href="${file.url}" target="_blank">
+                <img src="${file.thumbnail}" alt="YouTube Video Preview">
+            </a>
+        `;
+    } else if (file.type === "link") {
+        previewContent = `
+            <span>&#10006;</span>
+            <div class="link-preview">
+                <a href="${file.url}" target="_blank" class="link-box">${file.url}</a>
+            </div>
+        `;
+    }
+    
+    previewContainer.innerHTML = previewContent;
+    
+    // Add close button functionality
+    const closeBtn = document.querySelector(".PopUpPreview span");
+    if (closeBtn) {
+        closeBtn.onclick = () => {
+            previewContainer.style.display = "none";
+            currentPreviewIndex = -1;
+        };
+    }
+};
 
+// Function to navigate to previous image
+const showPreviousImage = () => {
+    if (currentPreviewIndex > 0) {
+        currentPreviewIndex--;
+        showPreview(currentPreviewIndex);
+    }
+};
+
+// Function to navigate to next image
+const showNextImage = () => {
+    if (currentPreviewIndex < files.length - 1) {
+        currentPreviewIndex++;
+        showPreview(currentPreviewIndex);
+    }
+};
+
+// Enhanced keyboard event handling
+document.addEventListener("keydown", (e) => {
+    const previewContainer = document.querySelector(".PopUpPreview");
+    const isPreviewVisible = previewContainer.style.display === "block";
+    
+    if (isPreviewVisible) {
+        switch(e.key) {
+            case "Escape":
+                previewContainer.style.display = "none";
+                currentPreviewIndex = -1;
+                break;
+            case "ArrowLeft":
+                e.preventDefault();
+                showPreviousImage();
+                break;
+            case "ArrowRight":
+                e.preventDefault();
+                showNextImage();
+                break;
+        }
+    }
+});
 
 
 const deleteImage = (index) => {
