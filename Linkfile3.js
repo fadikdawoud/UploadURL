@@ -414,3 +414,55 @@ const clearDatabaseAndFiles = () => {
 };
 clearButton.addEventListener("click", clearDatabaseAndFiles);
 
+// Export to JSON functionality
+const exportButton = document.getElementById("exportButton");
+const exportToJSON = () => {
+    const jsonString = JSON.stringify(files, null, 2);
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "images-export.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+};
+exportButton.addEventListener("click", exportToJSON);
+
+// Import from JSON functionality
+const importButton = document.getElementById("importButton");
+const jsonInput = document.getElementById("jsonInput");
+
+const importFromJSON = () => {
+    jsonInput.click();
+};
+
+importButton.addEventListener("click", importFromJSON);
+
+jsonInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const importedData = JSON.parse(event.target.result);
+                if (Array.isArray(importedData)) {
+                    // Append imported data to existing files array
+                    files = [...files, ...importedData];
+                    saveToLocalStorage();
+                    showImages();
+                    alert(`Import successful! ${importedData.length} item(s) have been added to your collection.`);
+                } else {
+                    alert("Invalid JSON format. Expected an array.");
+                }
+            } catch (error) {
+                alert("Error parsing JSON file: " + error.message);
+            }
+        };
+        reader.readAsText(file);
+        // Reset the input so the same file can be selected again
+        jsonInput.value = "";
+    }
+});
+

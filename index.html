@@ -12,13 +12,22 @@
 <body>
     <h1>Nachhilfe</h1>
     <h2>Fady Khalid Dawoud Wahba</h2>
-    <label for="imageInput">
-            <img class="add-icon" src="assets/add.png">
-            <div>
-                <button id="clearButton"><img src="assets/delete.png"></button>
-                <input id="imageInput" multiple="multiple" type="file" accept="image/*" hidden >
-            </div>    
-    </label>
+    <div class="buttons-container">
+        <button id="exportButton" title="Export to JSON">
+            <img src="assets/download.png" title="Export to JSON">
+        </button>
+        <button id="importButton" title="Import from JSON">
+            <img src="assets/upload.png" alt="Import from JSON">
+        </button>
+        <label for="imageInput" class="add-icon-label">
+            <img class="add-icon" title="Add Files" src="assets/add.png">
+        </label>
+        <button id="clearButton" title="Clear Files">
+            <img src="assets/delete.png">
+        </button>
+        <input id="jsonInput" type="file" accept=".json" hidden>
+        <input id="imageInput" multiple="multiple" type="file" accept="image/*" hidden>
+    </div>
     
 
     <div id="dropArea" class="drop-area">
@@ -38,22 +47,6 @@
     </div>
 
     <script src="Linkfile3.js"></script>
-<!-- 
-    <script>
-window.onload = function() {
-  setTimeout(() => {
-    document.querySelectorAll('gif-player').forEach(gifPlayer => {
-      const style = gifPlayer.getAttribute('style');
-      if (style) {
-        // Remove width and height from the style attribute
-        const newStyle = style.replace(/width:\s?[\d\w%]+;?/g, '').replace(/height:\s?[\d\w%]+;?/g, '');
-        gifPlayer.setAttribute('style', newStyle);
-      }
-    });
-  }, 1000); // Wait for 1 second before removing the styles
-};
-    </script> -->
-    
 
 </body>
 </html>

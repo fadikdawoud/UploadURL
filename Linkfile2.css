@@ -1,4 +1,4 @@
-*{
+* {
     margin: 0;
     padding: 0;
 }
@@ -10,23 +10,29 @@
     font-family: satoshi-bold;
     src: url(assets/Satoshi-Bold.ttf);
 }
-body{
+body {
     background-color: rgb(24, 24, 24);
     /* background-color: rgb(235, 235, 235); */
     padding-top: 150px;
     padding-left: 40px;
     padding-right: 40px;
 }
-.add-icon{
+/* Buttons Container */
+.buttons-container {
     position: absolute;
-    top: 16px;
-    right: 108px;
+    top: 24px;
+    right: 56px;
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    z-index: 2;
+}
+
+.add-icon {
     width: 35px;
-    margin: 10px;
     transition: transform 0.2s;
     user-select: none;
-    z-index: 2;
-   /* antialiasing */
+    /* antialiasing */
     outline: 1px solid transparent;
     backface-visibility: hidden;
     transform: translateZ(0);
@@ -36,12 +42,21 @@ body{
     transform-origin: center;
     /* filter: invert(1); */
 }
-.add-icon:hover{
+
+.add-icon-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    margin: 0;
+}
+
+.add-icon-label:hover .add-icon {
     transform: translateY(-2px);
 }
-.logo{
-    width:48px;
-    height:48px;
+.logo {
+    width: 48px;
+    height: 48px;
     fill: white;
     position: absolute;
     top: 24px;
@@ -49,11 +64,11 @@ body{
     user-select: none;
     transform: translateZ(0);
 }
-h1{
+h1 {
     position: absolute;
     top: 32px;
     left: 50%;
-    transform: translate(-50% ,-50%);
+    transform: translate(-50%, -50%);
     font-family: satoshi-bold;
     font-size: 32px;
     text-align: center;
@@ -61,11 +76,11 @@ h1{
     user-select: none;
     color: white;
 }
-h2{
+h2 {
     position: absolute;
     top: 56px;
     left: 50%;
-    transform: translate(-50% ,-50%);
+    transform: translate(-50%, -50%);
     font-family: satoshi-reg;
     font-size: 18px;
     /* text-transform: uppercase; */
@@ -74,33 +89,35 @@ h2{
     color: white;
 }
 /* /////////////////////////////////////////////////////////// */
-section{
+section {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     column-gap: 40px;
     row-gap: 40px;
 }
 
-.holder{
+.holder {
     width: 400px;
     display: flex;
     justify-content: center;
     align-items: center;
     border-radius: 20px;
-    box-shadow: rgba(0, 0, 0, 0.25) 0px 13px 27px -5px, rgba(0, 0, 0, 0.3) 0px 8px 16px -8px;
+    box-shadow: rgba(0, 0, 0, 0.25) 0px 13px 27px -5px,
+        rgba(0, 0, 0, 0.3) 0px 8px 16px -8px;
     overflow: hidden;
     position: relative;
     outline: none;
     border: none;
 }
 
-.imglook, .holder a img{
+.imglook,
+.holder a img {
     width: 100%;
     height: 100%;
 
     object-fit: cover;
     transition: transform 0.7s;
-    transition-delay: .2s;
+    transition-delay: 0.2s;
     transform: scale(1);
     outline: none;
     border: none;
@@ -117,8 +134,8 @@ gif-player {
     justify-self: center; /* Center-aligns horizontally */
 }
 
-
-.imglook:hover, .holder a img:hover {
+.imglook:hover,
+.holder a img:hover {
     transform: scale(1.05);
 }
 
@@ -130,30 +147,31 @@ gif-player {
     align-items: center;
 }
 
-.holder span{
+.holder span {
     color: white;
     position: absolute;
-    top: .1rem;
-    right: .5rem;
+    top: 0.1rem;
+    right: 0.5rem;
     font-size: 20px;
     cursor: pointer;
     padding: 10px;
     mix-blend-mode: difference;
 }
-.holder span:active{
-    transform: scale(.6);
+.holder span:active {
+    transform: scale(0.6);
 }
 /* ////////////////////////////////////////////////////// */
-.hidden{
+.hidden {
     opacity: 1;
 }
-.showx{
+.showx {
     opacity: 1;
 }
 /* ////////////////////////////////////////////////////// */
-.PopUpPreview{
+.PopUpPreview {
     position: fixed;
-    top: 0; left: 0;
+    top: 0;
+    left: 0;
     background-color: rgba(0, 0, 0, 0.95);
     height: 100vh;
     width: 100vw;
@@ -161,7 +179,7 @@ gif-player {
     display: none;
     user-select: none;
 }
-.PopUpPreview span{
+.PopUpPreview span {
     position: absolute;
     top: 50px;
     right: 50px;
@@ -172,13 +190,14 @@ gif-player {
     cursor: pointer;
     z-index: 101;
 }
-.PopUpPreview span:hover{
+.PopUpPreview span:hover {
     transform: scale(1.05);
 }
-.PopUpPreview img{
+.PopUpPreview img {
     position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%,-50%);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     width: 40%;
     height: 100%;
     object-fit: contain;
@@ -186,17 +205,17 @@ gif-player {
 }
 @media print {
     body {
-      background-color: rgb(235, 235, 235);
+        background-color: rgb(235, 235, 235);
     }
-    .holder span{
-        display:none;
+    .holder span {
+        display: none;
     }
-    .PopUpPreview span{
-        display:none;
+    .PopUpPreview span {
+        display: none;
     }
-  }
+}
 
-#imageUrlInput{
+#imageUrlInput {
     position: absolute;
     top: 30px;
     left: 40%;
@@ -210,7 +229,7 @@ gif-player {
     outline: none;
     display: none;
 }
-.drop-area{
+.drop-area {
     position: fixed;
     top: 0;
     bottom: 0;
@@ -218,26 +237,20 @@ gif-player {
     right: 0;
 }
 
-#clearButton img{
-    width: 36x;
-    height: 36px;
-    filter: invert(1);
-}
-#clearButton{
+/* All Buttons Common Styles */
+#exportButton,
+#importButton,
+#clearButton {
     background-color: transparent;
     outline: none;
     border: none;
-    
-    position: absolute;
-    top: 16px;
-    right: 40px;
     width: fit-content;
     height: fit-content;
-    margin: 10px;
+    margin: 0;
+    padding: 0;
     transition: transform 0.2s;
     user-select: none;
-    z-index: 2;
-   /* antialiasing */
+    /* antialiasing */
     outline: 1px solid transparent;
     backface-visibility: hidden;
     transform: translateZ(0);
@@ -245,13 +258,36 @@ gif-player {
     perspective: 1000;
     cursor: pointer;
     transform-origin: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
-#clearButton:hover{
+
+#clearButton img {
+    width: 36px;
+    height: 36px;
+    filter: invert(1);
+}
+
+#exportButton img,
+#importButton img {
+    width: 24px;
+    height: 24px;
+    filter: invert(1);
+}
+
+#exportButton:hover,
+#importButton:hover,
+#clearButton:hover {
     transform: translateY(-2px);
 }
-#clearButton:active{
+
+#exportButton:active,
+#importButton:active,
+#clearButton:active {
     transform: scale(0.98);
 }
+
 /* /////////////////////////////////////////////////// */
 .link-holder {
     height: fit-content;
@@ -272,13 +308,13 @@ gif-player {
 }
 
 /* //////////////////// */
-canvas{
+canvas {
     width: 100%;
-    height: 200px ;
+    height: 200px;
 
     object-fit: cover;
     transition: transform 0.7s;
-    transition-delay: .2s;
+    transition-delay: 0.2s;
     transform: scale(1);
     outline: none;
     border: 10px solid green;
@@ -287,7 +323,7 @@ gif-player {
     max-width: 100%;
     max-height: 400px;
 }
-.PopUpPreview gif-player{
+.PopUpPreview gif-player {
     max-width: 40%;
     max-height: 100%;
     position: absolute;
@@ -296,7 +332,7 @@ gif-player {
     object-fit: contain;
     user-select: none;
 }
-.popup-gif{
+.popup-gif {
     width: 100% !important;
     height: 100% !important;
 }
