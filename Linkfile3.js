@@ -450,7 +450,15 @@ jsonInput.addEventListener("change", (e) => {
                 if (Array.isArray(importedData)) {
                     // Append imported data to existing files array
                     files = [...files, ...importedData];
-                    saveToLocalStorage();
+                    try {
+                        saveToLocalStorage();
+                    } catch (error) {
+                        if (error.name === 'QuotaExceededError' || error.message.includes('exceeded the quota')) {
+                            alert("The imported file is too large to be saved to your browser's local storage. You can still view the images, but they won't be saved for your next session.");
+                        } else {
+                            throw error; // re-throw other errors
+                        }
+                    }
                     showImages();
                     alert(`Import successful! ${importedData.length} item(s) have been added to your collection.`);
                 } else {
