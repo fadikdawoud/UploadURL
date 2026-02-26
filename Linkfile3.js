@@ -1,6 +1,7 @@
 const imageInput = document.getElementById("imageInput");
 const cardContainer = document.querySelector(".section");
 const dropArea = document.getElementById("dropArea");
+const popupPreview = document.querySelector(".PopUpPreview");
 let files = [];
 let currentPreviewIndex = -1; // Track current image index in preview mode
 
@@ -14,7 +15,7 @@ window.onload = () => {
 };
 
 // Handle paste event
-document.addEventListener("paste", (e) => {
+const handlePasteEvent = (e) => {
     const items = e.clipboardData.items;
 
     for (let i = 0; i < items.length; i++) {
@@ -31,20 +32,22 @@ document.addEventListener("paste", (e) => {
             reader.readAsDataURL(blob);
         }
     }
-});
+};
 
-// Drag and drop event listeners
-dropArea.addEventListener("dragover", (e) => {
+window.addEventListener("paste", handlePasteEvent, true);
+
+const handleDragOver = (e) => {
     e.preventDefault();
     dropArea.classList.add("dragover");
-});
+};
 
-dropArea.addEventListener("dragleave", () => {
+const handleDragLeave = () => {
     dropArea.classList.remove("dragover");
-});
+};
 
-dropArea.addEventListener("drop", async (e) => {
+const handleDrop = async (e) => {
     e.preventDefault();
+    e.stopPropagation();
     dropArea.classList.remove("dragover");
 
     // Check if the dropped item is a file or a URL
@@ -63,7 +66,18 @@ dropArea.addEventListener("drop", async (e) => {
             handleGenericLink(droppedUrl);
         }
     }
-});
+};
+
+// Drag and drop event listeners
+dropArea.addEventListener("dragover", handleDragOver);
+dropArea.addEventListener("dragleave", handleDragLeave);
+dropArea.addEventListener("drop", handleDrop);
+
+if (popupPreview) {
+    popupPreview.addEventListener("dragover", handleDragOver);
+    popupPreview.addEventListener("dragleave", handleDragLeave);
+    popupPreview.addEventListener("drop", handleDrop);
+}
 
 imageInput.addEventListener("change", () => {
     const selectedFiles = imageInput.files;
