@@ -119,7 +119,12 @@ const handlePasteEvent = (e) => {
 window.addEventListener("paste", handlePasteEvent, true);
 
 const handleDragOver = (e) => {
+    if (e.__dragHandled) return;
+    e.__dragHandled = true;
     e.preventDefault();
+    if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = "copy";
+    }
     dropArea.classList.add("dragover");
 };
 
@@ -127,17 +132,51 @@ const handleDragLeave = () => {
     dropArea.classList.remove("dragover");
 };
 
+const getDroppedUrl = (dataTransfer) => {
+    if (!dataTransfer) return "";
+
+    const uriList = dataTransfer.getData("text/uri-list");
+    if (uriList) {
+        const parsed = uriList
+            .split("\n")
+            .map((line) => line.trim())
+            .find((line) => line && !line.startsWith("#"));
+        if (parsed) return parsed;
+    }
+
+    const plainText = dataTransfer.getData("text/plain");
+    return plainText ? plainText.trim() : "";
+};
+
+const handleWindowDragLeave = (e) => {
+    const exitedViewport =
+        e.clientX <= 0 ||
+        e.clientY <= 0 ||
+        e.clientX >= window.innerWidth ||
+        e.clientY >= window.innerHeight;
+
+    if (exitedViewport) {
+        handleDragLeave();
+    }
+};
+
 const handleDrop = async (e) => {
+    if (e.__dropHandled) return;
+    e.__dropHandled = true;
+
     e.preventDefault();
     e.stopPropagation();
     dropArea.classList.remove("dragover");
+
+    if (!e.dataTransfer) return;
 
     // Check if the dropped item is a file or a URL
     if (e.dataTransfer.files.length > 0) {
         const droppedFiles = e.dataTransfer.files;
         handleDroppedFiles(droppedFiles);
-    } else if (e.dataTransfer.types.includes("text/uri-list")) {
-        const droppedUrl = e.dataTransfer.getData("text/uri-list");
+    } else {
+        const droppedUrl = getDroppedUrl(e.dataTransfer);
+        if (!droppedUrl) return;
 
         // Check if the URL points to an image or YouTube video or is a generic link
         if (isImageUrl(droppedUrl)) {
@@ -160,6 +199,11 @@ if (popupPreview) {
     popupPreview.addEventListener("dragleave", handleDragLeave);
     popupPreview.addEventListener("drop", handleDrop);
 }
+
+document.addEventListener("dragover", handleDragOver);
+document.addEventListener("drop", handleDrop);
+document.addEventListener("dragend", handleDragLeave);
+window.addEventListener("dragleave", handleWindowDragLeave);
 
 imageInput.addEventListener("change", () => {
     const selectedFiles = imageInput.files;
