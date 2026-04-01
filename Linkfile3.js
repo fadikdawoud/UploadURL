@@ -5,6 +5,64 @@ const popupPreview = document.querySelector(".PopUpPreview");
 let files = [];
 let currentPreviewIndex = -1; // Track current image index in preview mode
 
+const GIF_MODES = Object.freeze({
+    PLAYBACK: "playback",
+    SCROLL: "scroll"
+});
+
+// Update the stored state of GIF mode instead of forcing a constant.
+let activeGifMode = GIF_MODES.PLAYBACK;
+
+const isScrollModeActive = () => activeGifMode === GIF_MODES.SCROLL;
+
+const patchGifPlayerModeGuards = () => {
+    const GifPlayerElement = customElements.get("gif-player");
+    if (!GifPlayerElement) return;
+
+    const proto = GifPlayerElement.prototype;
+    if (proto.__modeGuardsPatched) return;
+
+    const originalMove = proto.move;
+    const originalPausePlayback = proto.pausePlayback;
+    const originalResumePlayback = proto.resumePlayback;
+
+    proto.move = function(event) {
+        if (!this._swipe) return;
+        return originalMove.call(this, event);
+    };
+
+    proto.pausePlayback = function(event) {
+        if (!this._swipe && event) return;
+        return originalPausePlayback.call(this, event);
+    };
+
+    proto.resumePlayback = function(event) {
+        if (!this._swipe && event) return;
+        return originalResumePlayback.call(this, event);
+    };
+
+    proto.__modeGuardsPatched = true;
+};
+
+const applyGifInteractionMode = (container = document) => {
+    patchGifPlayerModeGuards();
+
+    container.querySelectorAll("gif-player").forEach((player) => {
+        player.swipe = isScrollModeActive();
+        player.style.cursor = isScrollModeActive() ? "col-resize" : "default";
+        player.setAttribute("data-gif-mode", activeGifMode);
+    });
+};
+
+patchGifPlayerModeGuards();
+
+if (window.customElements && typeof window.customElements.whenDefined === "function") {
+    window.customElements.whenDefined("gif-player").then(() => {
+        patchGifPlayerModeGuards();
+        applyGifInteractionMode(document);
+    });
+}
+
 // Load images from local storage on page load
 window.onload = () => {
     const savedFiles = JSON.parse(localStorage.getItem("images"));
@@ -13,6 +71,30 @@ window.onload = () => {
         showImages();
     }
 };
+
+const setupGifModeToggle = () => {
+    const toggle = document.getElementById("gifModeToggle");
+    if (!toggle) return;
+    
+    // Set initial UI checked state based on current mode
+    toggle.checked = activeGifMode === GIF_MODES.SCROLL;
+    
+    toggle.addEventListener("change", (e) => {
+        activeGifMode = e.target.checked ? GIF_MODES.SCROLL : GIF_MODES.PLAYBACK;
+        // Re-apply correct modes across existing elements on the screen
+        applyGifInteractionMode(document);
+        
+        // If preview is currently open, refresh to show/hide controls instead of closing
+        const previewContainer = document.querySelector(".PopUpPreview");
+        if (previewContainer && previewContainer.style.display === "block" && currentPreviewIndex >= 0) {
+            showPreview(currentPreviewIndex);
+        } else {
+            closePreview();
+        }
+    });
+};
+
+setupGifModeToggle();
 
 // Handle paste event
 const handlePasteEvent = (e) => {
@@ -248,6 +330,7 @@ const showImages = () => {
     });
 
     cardContainer.innerHTML = images;
+    applyGifInteractionMode(cardContainer);
     observeHiddenElements();
 
     document.querySelectorAll(".holder img, .holder gif-player").forEach(thisOne => {
@@ -267,12 +350,188 @@ const showImages = () => {
     });
 };
 
+const closePreview = () => {
+    const previewContainer = document.querySelector(".PopUpPreview");
+    if (!previewContainer) return;
+
+    if (typeof previewContainer._cleanupGifControls === "function") {
+        previewContainer._cleanupGifControls();
+        previewContainer._cleanupGifControls = null;
+    }
+
+    previewContainer.style.display = "none";
+    currentPreviewIndex = -1;
+};
+
+const setupGifPlaybackControls = (previewContainer) => {
+    if (activeGifMode !== GIF_MODES.PLAYBACK) return;
+
+    const gifPlayer = previewContainer.querySelector(".popup-gif");
+    const controls = previewContainer.querySelector(".gif-controls");
+    if (!gifPlayer || !controls) return;
+
+    // Ensure preview GIF is played at normal speed by default.
+    gifPlayer.speed = 1;
+    gifPlayer.setAttribute("speed", "1");
+
+    if (typeof gifPlayer.start !== "function" || typeof gifPlayer.stop !== "function") {
+        if (window.customElements && typeof window.customElements.whenDefined === "function") {
+            window.customElements.whenDefined("gif-player").then(() => {
+                if (previewContainer.style.display === "block") {
+                    setupGifPlaybackControls(previewContainer);
+                }
+            });
+        }
+        return;
+    }
+
+    const playPauseBtn = controls.querySelector(".gif-play-pause");
+    const previousFrameBtn = controls.querySelector(".gif-prev-frame");
+    const nextFrameBtn = controls.querySelector(".gif-next-frame");
+    const frameSlider = controls.querySelector(".gif-frame-slider");
+    const frameLabel = controls.querySelector(".gif-frame-label");
+
+    if (!playPauseBtn || !previousFrameBtn || !nextFrameBtn || !frameSlider || !frameLabel) {
+        return;
+    }
+
+    playPauseBtn.style.minWidth = "58px";
+    playPauseBtn.style.textAlign = "center";
+
+
+    const getFrameCount = () => {
+        if (gifPlayer._frames && gifPlayer._frames.length) return gifPlayer._frames.length;
+        if (gifPlayer._gif && typeof gifPlayer._gif.numFrames === "function") return gifPlayer._gif.numFrames();
+        return 1;
+    };
+
+    let hasStartedPlayback = false;
+    let isDraggingSlider = false;
+
+    const isActivelyPlaying = () => {
+        return hasStartedPlayback && gifPlayer.playing && !gifPlayer.paused;
+    };
+
+    const pauseGifPlayback = () => {
+        const currentFrame = Number(gifPlayer.frame) || 0;
+
+        if (typeof gifPlayer.pausePlayback === "function") {
+            gifPlayer.pausePlayback();
+        }
+
+        if (typeof gifPlayer.stop === "function") {
+            gifPlayer.stop();
+        }
+
+        gifPlayer.frame = currentFrame;
+        gifPlayer.paused = true;
+        hasStartedPlayback = true;
+    };
+
+    const resumeGifPlayback = () => {
+        if (typeof gifPlayer.start === "function" && !gifPlayer.playing) {
+            gifPlayer.start();
+        }
+
+        gifPlayer.paused = false;
+        hasStartedPlayback = true;
+    };
+
+    const updatePlayPauseLabel = () => {
+        playPauseBtn.textContent = isActivelyPlaying() ? "⏸" : "▶";
+    };
+
+    const updateFrameUi = () => {
+        const totalFrames = Math.max(getFrameCount(), 1);
+        const currentFrame = Math.max(0, Math.min(Number(gifPlayer.frame) || 0, totalFrames - 1));
+
+        frameSlider.min = "0";
+        frameSlider.max = String(totalFrames - 1);
+        if (!isDraggingSlider) {
+            frameSlider.value = String(currentFrame);
+        }
+        frameSlider.disabled = totalFrames <= 1;
+        
+        const displayFrame = isDraggingSlider ? Number(frameSlider.value) : currentFrame;
+        frameLabel.textContent = `${displayFrame + 1} / ${totalFrames}`;
+        updatePlayPauseLabel();
+    };
+
+    const seekToFrame = (frameIndex) => {
+        const totalFrames = Math.max(getFrameCount(), 1);
+        const clampedFrame = Math.max(0, Math.min(frameIndex, totalFrames - 1));
+        pauseGifPlayback();
+        gifPlayer.frame = clampedFrame;
+        updateFrameUi();
+    };
+
+    const onGifFrame = () => {
+        updateFrameUi();
+    };
+
+    const onGifLoaded = () => {
+        gifPlayer.stop();
+        gifPlayer.paused = true;
+        hasStartedPlayback = false;
+        gifPlayer.frame = 0;
+        updateFrameUi();
+    };
+
+    playPauseBtn.addEventListener("click", () => {
+        if (isActivelyPlaying()) {
+            pauseGifPlayback();
+        } else {
+            resumeGifPlayback();
+        }
+        updatePlayPauseLabel();
+    });
+
+    previousFrameBtn.addEventListener("click", () => {
+        seekToFrame((Number(gifPlayer.frame) || 0) - 1);
+    });
+
+    nextFrameBtn.addEventListener("click", () => {
+        seekToFrame((Number(gifPlayer.frame) || 0) + 1);
+    });
+
+    frameSlider.addEventListener("input", (event) => {
+        isDraggingSlider = true;
+        // Just update the label to feel responsive, but don't force synchronous frame decoding yet
+        frameLabel.textContent = `${Number(event.target.value) + 1} / ${Math.max(getFrameCount(), 1)}`;
+    });
+    
+    frameSlider.addEventListener("change", (event) => {
+        isDraggingSlider = false;
+        seekToFrame(Number(event.target.value));
+    });
+
+    gifPlayer.addEventListener("gif-loaded", onGifLoaded, { once: true });
+    gifPlayer.addEventListener("gif-frame", onGifFrame);
+
+    if (gifPlayer._gif) {
+        onGifLoaded();
+    } else {
+        updateFrameUi();
+    }
+
+    previewContainer._cleanupGifControls = () => {
+        pauseGifPlayback();
+        gifPlayer.removeEventListener("gif-frame", onGifFrame);
+    };
+};
+
 // Function to show preview for a specific index
 const showPreview = (index) => {
     if (index < 0 || index >= files.length) return;
     
     const file = files[index];
     const previewContainer = document.querySelector(".PopUpPreview");
+
+    if (typeof previewContainer._cleanupGifControls === "function") {
+        previewContainer._cleanupGifControls();
+        previewContainer._cleanupGifControls = null;
+    }
+
     previewContainer.style.display = "block";
     
     let previewContent = '';
@@ -280,30 +539,52 @@ const showPreview = (index) => {
     if (typeof file === "string") {
         if (file.toLowerCase().endsWith(".gif")) {
             previewContent = `
-                <span>&#10006;</span>
-                <gif-player src="${file}" class="popup-gif"></gif-player>
+                <span class="preview-close">&#10006;</span>
+                <div class="popup-gif-stage">
+                    <gif-player src="${file}" class="popup-gif" speed="1"></gif-player>
+                    ${activeGifMode === GIF_MODES.PLAYBACK ? `
+                    <div class="gif-controls">
+                        <button type="button" class="gif-prev-frame" title="Previous frame">⏮</button>
+                        <button type="button" class="gif-play-pause" title="Play / Pause">⏯</button>
+                        <button type="button" class="gif-next-frame" title="Next frame">⏭</button>
+                        <input type="range" class="gif-frame-slider" min="0" max="0" value="0" step="1">
+                        <div class="gif-frame-label">1 / 1</div>
+                    </div>
+                    ` : ""}
+                </div>
             `;
         } else {
             previewContent = `
-                <span>&#10006;</span>
+                <span class="preview-close">&#10006;</span>
                 <img src="${file}" alt="Preview">
             `;
         }
     } else if (file.type === "gif") {
         previewContent = `
-            <span>&#10006;</span>
-            <gif-player src="${file.src}" class="popup-gif"></gif-player>
+            <span class="preview-close">&#10006;</span>
+            <div class="popup-gif-stage">
+                <gif-player src="${file.src}" class="popup-gif" speed="1"></gif-player>
+                ${activeGifMode === GIF_MODES.PLAYBACK ? `
+                <div class="gif-controls">
+                    <button type="button" class="gif-prev-frame" title="Previous frame">⏮</button>
+                    <button type="button" class="gif-play-pause" title="Play / Pause">⏯</button>
+                    <button type="button" class="gif-next-frame" title="Next frame">⏭</button>
+                    <input type="range" class="gif-frame-slider" min="0" max="0" value="0" step="1">
+                    <div class="gif-frame-label">1 / 1</div>
+                </div>
+                ` : ""}
+            </div>
         `;
     } else if (file.type === "youtube") {
         previewContent = `
-            <span>&#10006;</span>
+            <span class="preview-close">&#10006;</span>
             <a href="${file.url}" target="_blank">
                 <img src="${file.thumbnail}" alt="YouTube Video Preview">
             </a>
         `;
     } else if (file.type === "link") {
         previewContent = `
-            <span>&#10006;</span>
+            <span class="preview-close">&#10006;</span>
             <div class="link-preview">
                 <a href="${file.url}" target="_blank" class="link-box">${file.url}</a>
             </div>
@@ -311,13 +592,14 @@ const showPreview = (index) => {
     }
     
     previewContainer.innerHTML = previewContent;
+    applyGifInteractionMode(previewContainer);
+    setupGifPlaybackControls(previewContainer);
     
     // Add close button functionality
-    const closeBtn = document.querySelector(".PopUpPreview span");
+    const closeBtn = document.querySelector(".PopUpPreview .preview-close");
     if (closeBtn) {
         closeBtn.onclick = () => {
-            previewContainer.style.display = "none";
-            currentPreviewIndex = -1;
+            closePreview();
         };
     }
 };
@@ -346,8 +628,7 @@ document.addEventListener("keydown", (e) => {
     if (isPreviewVisible) {
         switch(e.key) {
             case "Escape":
-                previewContainer.style.display = "none";
-                currentPreviewIndex = -1;
+                closePreview();
                 break;
             case "ArrowLeft":
                 e.preventDefault();

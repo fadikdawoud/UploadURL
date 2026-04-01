@@ -102,7 +102,8 @@ section {
     justify-content: center;
     align-items: center;
     border-radius: 20px;
-    box-shadow: rgba(0, 0, 0, 0.25) 0px 13px 27px -5px,
+    box-shadow:
+        rgba(0, 0, 0, 0.25) 0px 13px 27px -5px,
         rgba(0, 0, 0, 0.3) 0px 8px 16px -8px;
     overflow: hidden;
     position: relative;
@@ -178,8 +179,9 @@ gif-player {
     z-index: 100;
     display: none;
     user-select: none;
+    overflow: hidden;
 }
-.PopUpPreview span {
+.PopUpPreview .preview-close {
     position: absolute;
     top: 50px;
     right: 50px;
@@ -190,7 +192,7 @@ gif-player {
     cursor: pointer;
     z-index: 101;
 }
-.PopUpPreview span:hover {
+.PopUpPreview .preview-close:hover {
     transform: scale(1.05);
 }
 .PopUpPreview img {
@@ -210,7 +212,7 @@ gif-player {
     .holder span {
         display: none;
     }
-    .PopUpPreview span {
+    .PopUpPreview .preview-close {
         display: none;
     }
 }
@@ -288,6 +290,85 @@ gif-player {
     transform: scale(0.98);
 }
 
+.mode-toggle-container {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(24, 24, 24, 0.5);
+    padding: 6px 10px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(5px);
+    position: absolute;
+    left: 120px;
+    top: 30px;
+    z-index: 1000;
+}
+
+.mode-label {
+    color: white;
+    font-family: satoshi-reg;
+    font-size: 12px;
+    white-space: nowrap;
+    opacity: 0.8;
+}
+
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.2);
+    transition: 0.4s;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.4s;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+input:checked + .slider {
+    background-color: rgba(255, 255, 255, 0.4);
+}
+
+input:focus + .slider {
+    box-shadow: 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+input:checked + .slider:before {
+    transform: translateX(20px);
+}
+
+.slider.round {
+    border-radius: 24px;
+}
+
+.slider.round:before {
+    border-radius: 50%;
+}
+
 /* /////////////////////////////////////////////////// */
 .link-holder {
     height: fit-content;
@@ -324,15 +405,122 @@ gif-player {
     max-height: 400px;
 }
 .PopUpPreview gif-player {
-    max-width: 40%;
-    max-height: 100%;
-    position: absolute;
-    /* top: 20%; left: 0%; */
-    /* transform: translate(-50%,-50%); */
     object-fit: contain;
     user-select: none;
 }
+
+.popup-gif-stage {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    box-sizing: border-box;
+}
+
 .popup-gif {
-    width: 100% !important;
-    height: 100% !important;
+    position: relative;
+    display: block;
+    width: 85vw !important;
+    height: 85vh !important;
+    max-width: 1200px !important;
+    max-height: 85vh !important;
+}
+
+.gif-controls {
+    /* Lighter styling modifications */
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 101;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    align-items: center;
+    background: rgba(24, 24, 24, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 8px 16px;
+    border-radius: 20px;
+    backdrop-filter: blur(5px);
+    width: max-content;
+    max-width: 90vw;
+}
+
+.gif-play-pause,
+.gif-prev-frame,
+.gif-next-frame {
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: white;
+    font-family: satoshi-bold;
+    font-size: 13px;
+    padding: 6px 10px;
+    cursor: pointer;
+    transition:
+        background-color 0.2s ease,
+        transform 0.2s ease;
+    white-space: nowrap;
+    min-width: 58px;
+    min-height: 30px;
+    line-height: 1;
+    text-align: center;
+}
+
+.gif-play-pause:hover,
+.gif-prev-frame:hover,
+.gif-next-frame:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.gif-play-pause:active,
+.gif-prev-frame:active,
+.gif-next-frame:active {
+    transform: scale(0.95);
+}
+
+.gif-frame-slider {
+    width: 180px;
+    height: 4px;
+    cursor: pointer;
+    margin: 0 4px;
+}
+
+.gif-frame-label {
+    color: rgba(255, 255, 255, 0.9);
+    font-family: satoshi-reg;
+    letter-spacing: 0.5px;
+    font-size: 13px;
+    white-space: nowrap;
+    min-width: 50px;
+    text-align: center;
+}
+
+@media (max-width: 900px) {
+    .popup-gif {
+        width: 95vw !important;
+        height: 75vh !important;
+        max-width: 95vw !important;
+        max-height: 75vh !important;
+    }
+
+    .gif-controls {
+    /* Lighter styling modifications */
+        bottom: 20px;
+        padding: 8px 12px;
+        gap: 6px;
+    }
+
+    .gif-frame-slider {
+        width: 100px;
+    }
+
+    .gif-play-pause,
+    .gif-prev-frame,
+    .gif-next-frame {
+        padding: 5px 8px;
+        font-size: 12px;
+    }
 }
