@@ -360,6 +360,7 @@ const closePreview = () => {
     }
 
     previewContainer.style.display = "none";
+    document.body.classList.remove("popup-active");
     currentPreviewIndex = -1;
 };
 
@@ -533,7 +534,7 @@ const showPreview = (index) => {
     }
 
     previewContainer.style.display = "block";
-    
+    document.body.classList.add("popup-active");
     let previewContent = '';
     
     if (typeof file === "string") {

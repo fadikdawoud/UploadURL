@@ -290,6 +290,9 @@ gif-player {
     z-index: 1000;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
 }
+body.popup-active .mode-toggle-container {
+    position: fixed;
+}
 
 .mode-label {
     color: #e0e0e0;
