@@ -13,14 +13,15 @@
 body {
     background-color: rgb(24, 24, 24);
     /* background-color: rgb(235, 235, 235); */
-    padding-top: 150px;
+    padding-top: 100px;
     padding-left: 40px;
     padding-right: 40px;
 }
 /* Buttons Container */
 .buttons-container {
     position: absolute;
-    top: 24px;
+    top: 40px;
+    transform: translateY(-50%);
     right: 56px;
     display: flex;
     align-items: center;
@@ -28,19 +29,13 @@ body {
     z-index: 2;
 }
 
-.add-icon {
-    width: 35px;
+.add-icon-label svg {
+    width: 32px;
+    height: 32px;
+    color: white;
     transition: transform 0.2s;
     user-select: none;
-    /* antialiasing */
-    outline: 1px solid transparent;
-    backface-visibility: hidden;
-    transform: translateZ(0);
-    will-change: transform;
-    perspective: 1000;
     cursor: pointer;
-    transform-origin: center;
-    /* filter: invert(1); */
 }
 
 .add-icon-label {
@@ -51,26 +46,26 @@ body {
     margin: 0;
 }
 
-.add-icon-label:hover .add-icon {
+.add-icon-label:hover svg {
     transform: translateY(-2px);
 }
 .logo {
-    width: 48px;
-    height: 48px;
+    width: 36px;
+    height: 36px;
     fill: white;
     position: absolute;
-    top: 24px;
+    top: 40px;
     left: 56px;
     user-select: none;
-    transform: translateZ(0);
+    transform: translateY(-50%);
 }
 h1 {
     position: absolute;
-    top: 32px;
+    top: 30px;
     left: 50%;
     transform: translate(-50%, -50%);
     font-family: satoshi-bold;
-    font-size: 32px;
+    font-size: 24px;
     text-align: center;
     text-transform: uppercase;
     user-select: none;
@@ -78,15 +73,16 @@ h1 {
 }
 h2 {
     position: absolute;
-    top: 56px;
+    top: 50px;
     left: 50%;
     transform: translate(-50%, -50%);
     font-family: satoshi-reg;
-    font-size: 18px;
+    font-size: 14px;
     /* text-transform: uppercase; */
     letter-spacing: 1.4px;
     user-select: none;
     color: white;
+    font-weight: normal;
 }
 /* /////////////////////////////////////////////////////////// */
 section {
@@ -252,30 +248,18 @@ gif-player {
     padding: 0;
     transition: transform 0.2s;
     user-select: none;
-    /* antialiasing */
-    outline: 1px solid transparent;
-    backface-visibility: hidden;
-    transform: translateZ(0);
-    will-change: transform;
-    perspective: 1000;
     cursor: pointer;
-    transform-origin: center;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-#clearButton img {
-    width: 36px;
-    height: 36px;
-    filter: invert(1);
-}
-
-#exportButton img,
-#importButton img {
+#clearButton svg,
+#exportButton svg,
+#importButton svg {
     width: 24px;
     height: 24px;
-    filter: invert(1);
+    color: white;
 }
 
 #exportButton:hover,
@@ -293,31 +277,34 @@ gif-player {
 .mode-toggle-container {
     display: flex;
     align-items: center;
-    gap: 4px;
-    background: rgba(24, 24, 24, 0.5);
-    padding: 6px 10px;
+    gap: 6px;
+    background: rgba(30, 30, 30, 0.7);
+    padding: 6px 12px;
     border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(5px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(8px);
     position: absolute;
-    left: 120px;
-    top: 30px;
+    left: 110px;
+    top: 40px;
+    transform: translateY(-50%);
     z-index: 1000;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
 }
 
 .mode-label {
-    color: white;
+    color: #e0e0e0;
     font-family: satoshi-reg;
-    font-size: 12px;
+    font-size: 9px;
+    letter-spacing: 0.5px;
     white-space: nowrap;
-    opacity: 0.8;
+    opacity: 0.85;
 }
 
 .switch {
     position: relative;
     display: inline-block;
-    width: 44px;
-    height: 24px;
+    width: 36px;
+    height: 20px;
 }
 
 .switch input {
@@ -333,32 +320,32 @@ gif-player {
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(255, 255, 255, 0.2);
-    transition: 0.4s;
+    background-color: rgba(255, 255, 255, 0.15);
+    transition: 0.3s;
 }
 
 .slider:before {
     position: absolute;
     content: "";
-    height: 18px;
-    width: 18px;
+    height: 14px;
+    width: 14px;
     left: 3px;
     bottom: 3px;
     background-color: white;
-    transition: 0.4s;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 input:checked + .slider {
-    background-color: rgba(255, 255, 255, 0.4);
+    background-color: rgba(255, 255, 255, 0.3);
 }
 
 input:focus + .slider {
-    box-shadow: 0 0 1px rgba(255, 255, 255, 0.4);
+    box-shadow: 0 0 1px rgba(255, 255, 255, 0.3);
 }
 
 input:checked + .slider:before {
-    transform: translateX(20px);
+    transform: translateX(16px);
 }
 
 .slider.round {
@@ -507,7 +494,7 @@ gif-player {
     }
 
     .gif-controls {
-    /* Lighter styling modifications */
+        /* Lighter styling modifications */
         bottom: 20px;
         padding: 8px 12px;
         gap: 6px;
