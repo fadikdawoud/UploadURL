@@ -489,6 +489,7 @@ const setupGifPlaybackControls = (previewContainer) => {
     const updateFrameUi = () => {
         const totalFrames = Math.max(getFrameCount(), 1);
         const currentFrame = Math.max(0, Math.min(Number(gifPlayer.frame) || 0, totalFrames - 1));
+        const frameLabelWidthCh = (String(totalFrames).length * 2) + 3;
 
         frameSlider.min = "0";
         frameSlider.max = String(totalFrames - 1);
@@ -496,6 +497,7 @@ const setupGifPlaybackControls = (previewContainer) => {
             frameSlider.value = String(currentFrame);
         }
         frameSlider.disabled = totalFrames <= 1;
+        frameLabel.style.width = `${frameLabelWidthCh}ch`;
         
         const displayFrame = isDraggingSlider ? Number(frameSlider.value) : currentFrame;
         frameLabel.textContent = `${displayFrame + 1} / ${totalFrames}`;

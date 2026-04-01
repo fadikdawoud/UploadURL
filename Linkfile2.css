@@ -485,6 +485,7 @@ gif-player {
     font-size: 13px;
     white-space: nowrap;
     min-width: 50px;
+    font-variant-numeric: tabular-nums;
     text-align: center;
 }
 
