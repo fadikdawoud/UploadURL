@@ -5,6 +5,15 @@ const popupPreview = document.querySelector(".PopUpPreview");
 let files = [];
 let currentPreviewIndex = -1; // Track current image index in preview mode
 
+const INTERNAL_REORDER_MIME = "application/x-grid-reorder";
+let activeDragItem = null;
+
+const isInternalReorderDrag = (dataTransfer) => {
+    if (activeDragItem) return true;
+    if (!dataTransfer || !dataTransfer.types) return false;
+    return Array.from(dataTransfer.types).includes(INTERNAL_REORDER_MIME);
+};
+
 const STORAGE_KEYS = Object.freeze({
     LEGACY_FILES: "images",
     MIGRATION_DONE: "images_migrated_to_indexeddb_v1"
@@ -499,6 +508,8 @@ const handlePasteEvent = async (e) => {
 window.addEventListener("paste", handlePasteEvent, true);
 
 const handleDragOver = (e) => {
+    if (isInternalReorderDrag(e.dataTransfer)) return;
+
     if (e.__dragHandled) return;
     e.__dragHandled = true;
     e.preventDefault();
@@ -541,6 +552,13 @@ const handleWindowDragLeave = (e) => {
 };
 
 const handleDrop = async (e) => {
+    if (isInternalReorderDrag(e.dataTransfer)) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropArea.classList.remove("dragover");
+        return;
+    }
+
     if (e.__dropHandled) return;
     e.__dropHandled = true;
 
@@ -683,7 +701,7 @@ const renderImages = () => {
                 : `<img class="imglook" src="${e}" id="img-${i}" data-preview-index="${i}" loading="lazy" decoding="async">`;
 
             images += `
-                <div class="hidden">
+                <div class="hidden" draggable="true" data-item-index="${i}">
                     <div class="holder">
                         ${imgTag}
                         <span onclick="deleteImage(${i})">&#10006;</span>
@@ -691,7 +709,7 @@ const renderImages = () => {
                 </div>`;
         } else if (e.type === "gif") { // GIF player
             images += `
-                <div class="hidden">
+                <div class="hidden" draggable="true" data-item-index="${i}">
                     <div class="holder">
                         <gif-player src="${e.src}" class="imglook" id="gif-${i}" data-preview-index="${i}"></gif-player>
                         <span onclick="deleteImage(${i})">&#10006;</span>
@@ -699,7 +717,7 @@ const renderImages = () => {
                 </div>`;
         } else if (e.type === "youtube") { // YouTube video thumbnail
             images += `
-                <div class="hidden">
+                <div class="hidden" draggable="true" data-item-index="${i}">
                     <div class="holder">
                         <a href="${e.url}" target="_blank">
                             <img src="${e.thumbnail}" alt="YouTube Video" loading="lazy" decoding="async">
@@ -709,7 +727,7 @@ const renderImages = () => {
                 </div>`;
         } else if (e.type === "link") { // Generic link
             images += `
-                <div class="hidden">
+                <div class="hidden" draggable="true" data-item-index="${i}">
                     <div class="holder link-holder">
                         <a href="${e.url}" target="_blank" class="link-box">${e.url}</a>
                         <span onclick="deleteImage(${i})">&#10006;</span>
@@ -729,9 +747,88 @@ const showImages = () => {
 
     renderAnimationFrameId = requestAnimationFrame(() => {
         renderAnimationFrameId = null;
-        renderImages();
+        if (typeof document.startViewTransition === "function" && !activeDragItem) {
+            document.startViewTransition(() => renderImages());
+        } else {
+            renderImages();
+        }
     });
 };
+
+cardContainer.addEventListener("dragstart", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const sourceCard = target.closest(".hidden");
+    if (!sourceCard || !cardContainer.contains(sourceCard)) return;
+
+    activeDragItem = sourceCard;
+
+    if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData(INTERNAL_REORDER_MIME, "live-reorder");
+        event.dataTransfer.setData("text/plain", "");
+    }
+
+    setTimeout(() => {
+        if (activeDragItem) activeDragItem.classList.add("dragging");
+    }, 0);
+});
+
+cardContainer.addEventListener("dragover", (event) => {
+    if (!isInternalReorderDrag(event.dataTransfer) || !activeDragItem) return;
+
+    event.preventDefault(); // allow drop
+    if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = "move";
+    }
+
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const targetCard = target.closest(".hidden");
+    if (!targetCard || targetCard === activeDragItem || !cardContainer.contains(targetCard)) return;
+
+    // Live DOM swapping
+    const allCards = Array.from(cardContainer.querySelectorAll(".hidden"));
+    const draggedIndex = allCards.indexOf(activeDragItem);
+    const targetIndex = allCards.indexOf(targetCard);
+
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    if (draggedIndex < targetIndex) {
+        targetCard.after(activeDragItem);
+    } else {
+        targetCard.before(activeDragItem);
+    }
+});
+
+cardContainer.addEventListener("drop", (event) => {
+    if (!isInternalReorderDrag(event.dataTransfer) && !activeDragItem) return;
+    event.preventDefault();
+    event.stopPropagation();
+});
+
+cardContainer.addEventListener("dragend", () => {
+    if (!activeDragItem) return;
+
+    activeDragItem.classList.remove("dragging");
+
+    // Read the new sorted DOM to recreate the array
+    const newCardsOrder = Array.from(cardContainer.querySelectorAll(".hidden"));
+    const newFiles = newCardsOrder.map((card) => {
+        const originalIndex = Number(card.dataset.itemIndex);
+        return files[originalIndex];
+    }).filter(item => typeof item !== "undefined");
+
+    files.length = 0;
+    files.push(...newFiles);
+
+    activeDragItem = null;
+
+    showImages(); // Re-render to refresh indices
+    saveToLocalStorage();
+});
 
 cardContainer.addEventListener("click", (event) => {
     const mediaElement = event.target.closest(".imglook");

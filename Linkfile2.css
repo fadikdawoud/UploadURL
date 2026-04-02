@@ -171,6 +171,20 @@ gif-player {
     content-visibility: auto;
     contain-intrinsic-size: 360px 260px;
 }
+
+.hidden[draggable="true"] {
+    cursor: grab;
+}
+
+.hidden[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.hidden.dragging {
+    opacity: 0.1;
+    transition: opacity 0.05s ease-in;
+}
+
 .showx {
     opacity: 1;
 }
