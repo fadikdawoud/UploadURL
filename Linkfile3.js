@@ -5,6 +5,343 @@ const popupPreview = document.querySelector(".PopUpPreview");
 let files = [];
 let currentPreviewIndex = -1; // Track current image index in preview mode
 
+const STORAGE_KEYS = Object.freeze({
+    LEGACY_FILES: "images",
+    MIGRATION_DONE: "images_migrated_to_indexeddb_v1"
+});
+
+const INDEXED_DB_CONFIG = Object.freeze({
+    NAME: "upload_url_library",
+    VERSION: 1,
+    STORE: "appStore",
+    FILES_ID: "images"
+});
+
+let storageStatusTimer = null;
+let saveDebounceTimer = null;
+let hiddenElementsObserver = null;
+let renderAnimationFrameId = null;
+
+const showStorageStatus = (message, type = "info", timeoutMs = 5000) => {
+    const status = document.getElementById("storageStatus");
+    if (!status) return;
+
+    status.textContent = message;
+    status.dataset.type = type;
+    status.classList.add("visible");
+
+    if (storageStatusTimer) {
+        clearTimeout(storageStatusTimer);
+    }
+
+    storageStatusTimer = setTimeout(() => {
+        status.classList.remove("visible");
+    }, timeoutMs);
+};
+
+const readLegacyFilesFromLocalStorage = () => {
+    try {
+        const savedFiles = JSON.parse(localStorage.getItem(STORAGE_KEYS.LEGACY_FILES));
+        return Array.isArray(savedFiles) ? savedFiles : [];
+    } catch (error) {
+        console.warn("Failed to parse legacy local storage data.", error);
+        return [];
+    }
+};
+
+const isQuotaExceededError = (error) => {
+    if (!error) return false;
+    const message = typeof error.message === "string" ? error.message.toLowerCase() : "";
+    return (
+        error.name === "QuotaExceededError" ||
+        error.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+        message.includes("quota")
+    );
+};
+
+const formatBytes = (bytes) => {
+    if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+    const units = ["B", "KB", "MB", "GB"];
+    let size = bytes;
+    let unitIndex = 0;
+
+    while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024;
+        unitIndex += 1;
+    }
+
+    return `${size.toFixed(size < 10 && unitIndex > 0 ? 1 : 0)} ${units[unitIndex]}`;
+};
+
+const estimateSerializedSize = (value) => {
+    try {
+        return new Blob([JSON.stringify(value)]).size;
+    } catch (error) {
+        console.warn("Unable to estimate payload size.", error);
+        return 0;
+    }
+};
+
+const storageAdapter = (() => {
+    let dbPromise = null;
+
+    const isIndexedDbAvailable = () => typeof window !== "undefined" && "indexedDB" in window;
+
+    const openDatabase = () => {
+        if (!isIndexedDbAvailable()) {
+            return Promise.reject(new Error("IndexedDB is not supported in this browser."));
+        }
+
+        if (dbPromise) return dbPromise;
+
+        dbPromise = new Promise((resolve, reject) => {
+            const request = indexedDB.open(INDEXED_DB_CONFIG.NAME, INDEXED_DB_CONFIG.VERSION);
+
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains(INDEXED_DB_CONFIG.STORE)) {
+                    db.createObjectStore(INDEXED_DB_CONFIG.STORE, { keyPath: "id" });
+                }
+            };
+
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error || new Error("Failed to open IndexedDB."));
+        });
+
+        return dbPromise;
+    };
+
+    const readFilesRecord = (db) => {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(INDEXED_DB_CONFIG.STORE, "readonly");
+            const store = transaction.objectStore(INDEXED_DB_CONFIG.STORE);
+            const request = store.get(INDEXED_DB_CONFIG.FILES_ID);
+
+            request.onsuccess = () => {
+                const record = request.result;
+                resolve(record && Array.isArray(record.value) ? record.value : null);
+            };
+            request.onerror = () => reject(request.error || new Error("Failed to read from IndexedDB."));
+        });
+    };
+
+    const writeFilesRecord = (db, nextFiles) => {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(INDEXED_DB_CONFIG.STORE, "readwrite");
+            const store = transaction.objectStore(INDEXED_DB_CONFIG.STORE);
+
+            store.put({
+                id: INDEXED_DB_CONFIG.FILES_ID,
+                value: nextFiles,
+                updatedAt: Date.now()
+            });
+
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error || new Error("Failed to write to IndexedDB."));
+            transaction.onabort = () => reject(transaction.error || new Error("IndexedDB transaction aborted."));
+        });
+    };
+
+    const clearFilesRecord = (db) => {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(INDEXED_DB_CONFIG.STORE, "readwrite");
+            const store = transaction.objectStore(INDEXED_DB_CONFIG.STORE);
+            const request = store.delete(INDEXED_DB_CONFIG.FILES_ID);
+
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error || new Error("Failed to clear IndexedDB data."));
+        });
+    };
+
+    const migrateLegacyData = async (db) => {
+        const migrationDone = localStorage.getItem(STORAGE_KEYS.MIGRATION_DONE) === "1";
+        if (migrationDone) return;
+
+        const storedInIndexedDb = await readFilesRecord(db);
+        if (Array.isArray(storedInIndexedDb) && storedInIndexedDb.length > 0) {
+            localStorage.setItem(STORAGE_KEYS.MIGRATION_DONE, "1");
+            return;
+        }
+
+        const legacyFiles = readLegacyFilesFromLocalStorage();
+        if (legacyFiles.length > 0) {
+            await writeFilesRecord(db, legacyFiles);
+            localStorage.removeItem(STORAGE_KEYS.LEGACY_FILES);
+            showStorageStatus("Existing files were moved to larger browser storage.", "success", 6500);
+        }
+
+        localStorage.setItem(STORAGE_KEYS.MIGRATION_DONE, "1");
+    };
+
+    const loadFiles = async () => {
+        if (!isIndexedDbAvailable()) {
+            return readLegacyFilesFromLocalStorage();
+        }
+
+        try {
+            const db = await openDatabase();
+            await migrateLegacyData(db);
+            const indexedDbFiles = await readFilesRecord(db);
+            if (Array.isArray(indexedDbFiles)) {
+                return indexedDbFiles;
+            }
+        } catch (error) {
+            console.warn("IndexedDB load failed. Falling back to localStorage.", error);
+        }
+
+        return readLegacyFilesFromLocalStorage();
+    };
+
+    const saveFiles = async (nextFiles) => {
+        if (!Array.isArray(nextFiles)) {
+            throw new Error("Expected an array of files.");
+        }
+
+        if (isIndexedDbAvailable()) {
+            try {
+                const db = await openDatabase();
+                await writeFilesRecord(db, nextFiles);
+                localStorage.setItem(STORAGE_KEYS.MIGRATION_DONE, "1");
+                return;
+            } catch (error) {
+                console.warn("IndexedDB save failed. Trying localStorage fallback.", error);
+            }
+        }
+
+        localStorage.setItem(STORAGE_KEYS.LEGACY_FILES, JSON.stringify(nextFiles));
+    };
+
+    const clearFiles = async () => {
+        if (isIndexedDbAvailable()) {
+            try {
+                const db = await openDatabase();
+                await clearFilesRecord(db);
+            } catch (error) {
+                console.warn("Failed to clear IndexedDB data.", error);
+            }
+        }
+
+        localStorage.removeItem(STORAGE_KEYS.LEGACY_FILES);
+        localStorage.removeItem(STORAGE_KEYS.MIGRATION_DONE);
+    };
+
+    const getUsageEstimate = async () => {
+        if (!navigator.storage || typeof navigator.storage.estimate !== "function") {
+            return null;
+        }
+
+        try {
+            return await navigator.storage.estimate();
+        } catch (error) {
+            console.warn("Storage estimate is not available.", error);
+            return null;
+        }
+    };
+
+    return {
+        loadFiles,
+        saveFiles,
+        clearFiles,
+        getUsageEstimate
+    };
+})();
+
+let saveQueue = Promise.resolve();
+
+const enqueueStorageSave = (snapshot) => {
+    saveQueue = saveQueue
+        .catch(() => undefined)
+        .then(() => storageAdapter.saveFiles(snapshot));
+
+    return saveQueue;
+};
+
+const persistFiles = async (nextFiles = files, options = {}) => {
+    const { silent = false } = options;
+
+    try {
+        await enqueueStorageSave(nextFiles);
+    } catch (error) {
+        if (!silent) {
+            if (isQuotaExceededError(error)) {
+                showStorageStatus("Browser storage is full. Export JSON to save a backup on Windows.", "warning", 9000);
+            } else {
+                showStorageStatus("Could not save to browser storage right now.", "error", 7000);
+            }
+        }
+        throw error;
+    }
+};
+
+const schedulePersistFiles = (options = {}) => {
+    const { delayMs = 450, silent = true } = options;
+
+    if (saveDebounceTimer) {
+        clearTimeout(saveDebounceTimer);
+    }
+
+    saveDebounceTimer = setTimeout(() => {
+        saveDebounceTimer = null;
+        void persistFiles(files, { silent }).catch(() => undefined);
+    }, delayMs);
+};
+
+const flushScheduledPersistence = async (options = {}) => {
+    const { silent = true } = options;
+
+    if (saveDebounceTimer) {
+        clearTimeout(saveDebounceTimer);
+        saveDebounceTimer = null;
+    }
+
+    await persistFiles(files, { silent });
+};
+
+const normalizeImportedItem = (item) => {
+    if (typeof item === "string") {
+        const value = item.trim();
+        return value ? value : null;
+    }
+
+    if (!item || typeof item !== "object") {
+        return null;
+    }
+
+    if (item.type === "gif" && typeof item.src === "string") {
+        const src = item.src.trim();
+        return src ? { type: "gif", src } : null;
+    }
+
+    if (item.type === "youtube" && typeof item.url === "string" && typeof item.thumbnail === "string") {
+        const url = item.url.trim();
+        const thumbnail = item.thumbnail.trim();
+        return url && thumbnail ? { type: "youtube", url, thumbnail } : null;
+    }
+
+    if (item.type === "link" && typeof item.url === "string") {
+        const url = item.url.trim();
+        return url ? { type: "link", url } : null;
+    }
+
+    return null;
+};
+
+const sanitizeImportedItems = (items) => {
+    const accepted = [];
+    let rejected = 0;
+
+    items.forEach((item) => {
+        const normalized = normalizeImportedItem(item);
+        if (normalized) {
+            accepted.push(normalized);
+        } else {
+            rejected += 1;
+        }
+    });
+
+    return { accepted, rejected };
+};
+
 const GIF_MODES = Object.freeze({
     PLAYBACK: "playback",
     SCROLL: "scroll"
@@ -63,14 +400,26 @@ if (window.customElements && typeof window.customElements.whenDefined === "funct
     });
 }
 
-// Load images from local storage on page load
-window.onload = () => {
-    const savedFiles = JSON.parse(localStorage.getItem("images"));
-    if (savedFiles && Array.isArray(savedFiles)) {
-        files = savedFiles;
-        showImages();
+const initializePersistedFiles = async () => {
+    files = await storageAdapter.loadFiles();
+    showImages();
+
+    const usageEstimate = await storageAdapter.getUsageEstimate();
+    if (!usageEstimate || !usageEstimate.quota || !usageEstimate.usage) return;
+
+    const usageRatio = usageEstimate.quota > 0 ? usageEstimate.usage / usageEstimate.quota : 0;
+    if (usageRatio >= 0.85) {
+        showStorageStatus(
+            `Storage usage is high (${Math.round(usageRatio * 100)}%). Export JSON to keep a Windows backup.`,
+            "warning",
+            9000
+        );
     }
 };
+
+window.addEventListener("load", () => {
+    void initializePersistedFiles();
+});
 
 const setupGifModeToggle = () => {
     const toggle = document.getElementById("gifModeToggle");
@@ -96,23 +445,54 @@ const setupGifModeToggle = () => {
 
 setupGifModeToggle();
 
+const readFileAsLibraryEntry = (file) => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+
+        reader.onload = (event) => {
+            const fileUrl = event.target.result;
+            const isGif = typeof file.type === "string" && file.type.toLowerCase().includes("gif");
+            resolve(isGif ? { src: fileUrl, type: "gif" } : fileUrl);
+        };
+
+        reader.onerror = () => reject(reader.error || new Error("Could not read file."));
+        reader.readAsDataURL(file);
+    });
+};
+
+const appendEntriesAndPersist = (entries) => {
+    if (!Array.isArray(entries) || entries.length === 0) return;
+    files.push(...entries);
+    showImages();
+    saveToLocalStorage();
+};
+
 // Handle paste event
-const handlePasteEvent = (e) => {
-    const items = e.clipboardData.items;
+const handlePasteEvent = async (e) => {
+    const items = e.clipboardData ? Array.from(e.clipboardData.items || []) : [];
+    const pastedFiles = items
+        .filter((item) => item.type && item.type.indexOf("image") !== -1)
+        .map((item) => item.getAsFile())
+        .filter(Boolean);
 
-    for (let i = 0; i < items.length; i++) {
-        const item = items[i];
+    if (pastedFiles.length === 0) return;
 
-        if (item.type.indexOf("image") !== -1) {
-            const blob = item.getAsFile();
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                files.push(event.target.result);
-                showImages();
-                saveToLocalStorage();
-            };
-            reader.readAsDataURL(blob);
+    const results = await Promise.allSettled(pastedFiles.map((file) => readFileAsLibraryEntry(file)));
+    const accepted = [];
+    let failed = 0;
+
+    results.forEach((result) => {
+        if (result.status === "fulfilled") {
+            accepted.push(result.value);
+        } else {
+            failed += 1;
         }
+    });
+
+    appendEntriesAndPersist(accepted);
+
+    if (failed > 0) {
+        showStorageStatus(`Added ${accepted.length} item(s). ${failed} item(s) failed to load.`, "warning", 7000);
     }
 };
 
@@ -173,7 +553,7 @@ const handleDrop = async (e) => {
     // Check if the dropped item is a file or a URL
     if (e.dataTransfer.files.length > 0) {
         const droppedFiles = e.dataTransfer.files;
-        handleDroppedFiles(droppedFiles);
+        await handleDroppedFiles(droppedFiles);
     } else {
         const droppedUrl = getDroppedUrl(e.dataTransfer);
         if (!droppedUrl) return;
@@ -207,85 +587,55 @@ window.addEventListener("dragleave", handleWindowDragLeave);
 
 imageInput.addEventListener("change", () => {
     const selectedFiles = imageInput.files;
-    handleDroppedFiles(selectedFiles);
+    void handleDroppedFiles(selectedFiles);
 });
 
-const handleDroppedFiles = (fileList) => {
-    for (let i = 0; i < fileList.length; i++) {
-        const file = fileList[i];
-        
-        // Check if the file is a gif before reading it as data URL
-        if (file.type.toLowerCase().includes('gif') ) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const fileUrl = event.target.result;
+const handleDroppedFiles = async (fileList) => {
+    const selectedFiles = Array.from(fileList || []);
+    if (selectedFiles.length === 0) return;
 
-                // Add the gif as a gif-player object
-                files.push({ src: fileUrl, type: "gif" });
+    const results = await Promise.allSettled(selectedFiles.map((file) => readFileAsLibraryEntry(file)));
+    const accepted = [];
+    let failed = 0;
 
-                showImages();
-                saveToLocalStorage();
-            };
-            reader.readAsDataURL(file);
+    results.forEach((result) => {
+        if (result.status === "fulfilled") {
+            accepted.push(result.value);
         } else {
-            // If it's not a gif, just add it as a regular image URL
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const fileUrl = event.target.result;
-
-                // Add regular image
-                files.push(fileUrl);
-
-                showImages();
-                saveToLocalStorage();
-            };
-            reader.readAsDataURL(file);
+            failed += 1;
         }
+    });
+
+    appendEntriesAndPersist(accepted);
+
+    if (failed > 0) {
+        showStorageStatus(`Added ${accepted.length} item(s). ${failed} file(s) failed to read.`, "warning", 7000);
     }
 };
 
-const handleDroppedUrl = async (url) => {
-    // if (url.toLowerCase().endsWith('.webp')) {
-    //     // Replace .webp with .gif in the URL
-    //     url = url.replace(/\.webp$/, '.gif');
-    // }
+const handleDroppedUrl = (url) => {
+    const normalizedUrl = url.trim();
+    if (!normalizedUrl) return;
 
-    if (url.toLowerCase().endsWith('.gif')) {
-        // Treat as a gif-player
-        files.push({ src: url, type: "gif" });
-        showImages();
-        saveToLocalStorage();
-    } else {
-        // Treat as a regular image
-        files.push(url);
-        showImages();
-        saveToLocalStorage();
-    }
-    
-    if (isYouTubeUrl(url)) {
-        // If the URL is a YouTube link, treat it as a YouTube video
-        handleYouTubeUrl(url);
-        showImages();
-        saveToLocalStorage();
-    } else if (isImageUrl(url)) {
-        // If the URL points to an image
-        files.push(url);
-        showImages();
-        saveToLocalStorage();
-    } else {
-        // Otherwise, treat it as a generic link
-        handleGenericLink(url);
-        showImages();
-        saveToLocalStorage();
+    if (isYouTubeUrl(normalizedUrl)) {
+        handleYouTubeUrl(normalizedUrl);
+        return;
     }
 
-    // showImages();
-    // saveToLocalStorage();
+    if (isImageUrl(normalizedUrl)) {
+        const entry = normalizedUrl.toLowerCase().endsWith(".gif")
+            ? { src: normalizedUrl, type: "gif" }
+            : normalizedUrl;
+        appendEntriesAndPersist([entry]);
+        return;
+    }
+
+    handleGenericLink(normalizedUrl);
 };
 
 
 
-const handleYouTubeUrl = async (url) => {
+const handleYouTubeUrl = (url) => {
     const videoId = getYouTubeVideoId(url);
     if (videoId) {
         const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
@@ -294,23 +644,19 @@ const handleYouTubeUrl = async (url) => {
             url: url,
             thumbnail: thumbnailUrl
         };
-        files.push(videoData);
-        showImages();
-        saveToLocalStorage();
+        appendEntriesAndPersist([videoData]);
     } else {
         console.error("Invalid YouTube URL.");
     }
 };
 
 
-const handleGenericLink = async (url) => {
+const handleGenericLink = (url) => {
     const linkData = {
         type: "link",
         url: url
     };
-    files.push(linkData);
-    showImages();
-    saveToLocalStorage();
+    appendEntriesAndPersist([linkData]);
 };
 
 const isImageUrl = (url) => {
@@ -327,15 +673,14 @@ const getYouTubeVideoId = (url) => {
     return match ? match[1] || match[2] : null;
 };
 
-// Updated showImages function
-const showImages = () => {
+const renderImages = () => {
     let images = "";
 
     files.forEach((e, i) => {
         if (typeof e === "string") { // Regular image
             const imgTag = e.toLowerCase().endsWith(".gif") 
-                ? `<gif-player src="${e}" class="imglook" id="gif-${i}" speed="1"></gif-player>` 
-                : `<img class="imglook" src="${e}" id="img-${i}">`;
+                ? `<gif-player src="${e}" class="imglook" id="gif-${i}" data-preview-index="${i}" speed="1"></gif-player>` 
+                : `<img class="imglook" src="${e}" id="img-${i}" data-preview-index="${i}" loading="lazy" decoding="async">`;
 
             images += `
                 <div class="hidden">
@@ -348,7 +693,7 @@ const showImages = () => {
             images += `
                 <div class="hidden">
                     <div class="holder">
-                        <gif-player src="${e.src}" class="imglook" id="gif-${i}"></gif-player>
+                        <gif-player src="${e.src}" class="imglook" id="gif-${i}" data-preview-index="${i}"></gif-player>
                         <span onclick="deleteImage(${i})">&#10006;</span>
                     </div>
                 </div>`;
@@ -357,7 +702,7 @@ const showImages = () => {
                 <div class="hidden">
                     <div class="holder">
                         <a href="${e.url}" target="_blank">
-                            <img src="${e.thumbnail}" alt="YouTube Video">
+                            <img src="${e.thumbnail}" alt="YouTube Video" loading="lazy" decoding="async">
                         </a>
                         <span onclick="deleteImage(${i})">&#10006;</span>
                     </div>
@@ -376,23 +721,34 @@ const showImages = () => {
     cardContainer.innerHTML = images;
     applyGifInteractionMode(cardContainer);
     observeHiddenElements();
+};
 
-    document.querySelectorAll(".holder img, .holder gif-player").forEach(thisOne => {
-        const parentHolder = thisOne.closest(".holder");
-        const isYouTube = parentHolder.querySelector("a") && parentHolder.querySelector("a[href*='youtube']");
+// Updated showImages function
+const showImages = () => {
+    if (renderAnimationFrameId !== null) return;
 
-        if (!isYouTube) { // Prevent adding PopUpPreview for YouTube links
-            thisOne.onclick = () => {
-                // Find the index of this image in the files array
-                const imageId = thisOne.id;
-                const indexMatch = imageId.match(/\d+/);
-                currentPreviewIndex = indexMatch ? parseInt(indexMatch[0]) : 0;
-                
-                showPreview(currentPreviewIndex);
-            };
-        }
+    renderAnimationFrameId = requestAnimationFrame(() => {
+        renderAnimationFrameId = null;
+        renderImages();
     });
 };
+
+cardContainer.addEventListener("click", (event) => {
+    const mediaElement = event.target.closest(".imglook");
+    if (!mediaElement || !cardContainer.contains(mediaElement)) return;
+
+    const holder = mediaElement.closest(".holder");
+    if (!holder) return;
+
+    const isYouTubeCard = Boolean(holder.querySelector("a[href*='youtube']"));
+    if (isYouTubeCard) return;
+
+    const index = Number(mediaElement.dataset.previewIndex);
+    if (!Number.isFinite(index)) return;
+
+    currentPreviewIndex = index;
+    showPreview(currentPreviewIndex);
+});
 
 const closePreview = () => {
     const previewContainer = document.querySelector(".PopUpPreview");
@@ -697,30 +1053,63 @@ const deleteImage = (index) => {
 };
 
 const observeHiddenElements = () => {
-    const hiddenElements = document.querySelectorAll('.hidden');
+    const hiddenElements = cardContainer.querySelectorAll(".hidden");
 
-    const observer = new IntersectionObserver((entries) => {
+    if (hiddenElementsObserver) {
+        hiddenElementsObserver.disconnect();
+    }
+
+    hiddenElementsObserver = new IntersectionObserver((entries) => {
         entries.forEach((entry) => {
             if (entry.isIntersecting) {
-                entry.target.classList.add('showx');
+                entry.target.classList.add("showx");
             } else {
-                entry.target.classList.remove('showx');
+                entry.target.classList.remove("showx");
+            }
+
+            const gridGifPlayer = entry.target.querySelector(".holder gif-player");
+            if (!gridGifPlayer || typeof gridGifPlayer.stop !== "function") {
+                return;
+            }
+
+            if (entry.isIntersecting) {
+                if (!isScrollModeActive() && typeof gridGifPlayer.start === "function" && !gridGifPlayer.playing) {
+                    gridGifPlayer.start();
+                    gridGifPlayer.paused = false;
+                }
+            } else {
+                if (typeof gridGifPlayer.pausePlayback === "function") {
+                    gridGifPlayer.pausePlayback();
+                }
+                gridGifPlayer.stop();
+                gridGifPlayer.paused = true;
             }
         });
+    }, {
+        root: null,
+        rootMargin: "280px 0px",
+        threshold: 0.01
     });
 
     hiddenElements.forEach((element) => {
-        observer.observe(element);
+        hiddenElementsObserver.observe(element);
     });
 };
 
 const saveToLocalStorage = () => {
-    console.log("Saving files:", files); // Debug
-    localStorage.setItem("images", JSON.stringify(files));
+    schedulePersistFiles({ delayMs: 450, silent: false });
 };
 
 // Save images to local storage before the page unloads
-window.addEventListener("beforeunload", saveToLocalStorage);
+window.addEventListener("beforeunload", () => {
+    void flushScheduledPersistence({ silent: true }).catch(() => undefined);
+});
+
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+        void flushScheduledPersistence({ silent: true }).catch(() => undefined);
+    }
+});
 
 // Initial call to showImages to load any pre-existing images
 showImages();
@@ -747,14 +1136,17 @@ const addImageUrl = () => {
 };
 
 const clearButton = document.getElementById("clearButton");
-const clearDatabaseAndFiles = () => {
+const clearDatabaseAndFiles = async () => {
     if (confirm("Are you sure you want to delete all images?")) {
         files = [];
         showImages();
-        localStorage.removeItem("images");
+        await storageAdapter.clearFiles();
+        showStorageStatus("Cleared saved browser data.", "info", 5000);
     }
 };
-clearButton.addEventListener("click", clearDatabaseAndFiles);
+clearButton.addEventListener("click", () => {
+    void clearDatabaseAndFiles();
+});
 
 // Export to JSON functionality
 const exportButton = document.getElementById("exportButton");
@@ -786,28 +1178,64 @@ jsonInput.addEventListener("change", (e) => {
     const file = e.target.files[0];
     if (file) {
         const reader = new FileReader();
-        reader.onload = (event) => {
+        reader.onload = async (event) => {
+            let importedData;
+
             try {
-                const importedData = JSON.parse(event.target.result);
-                if (Array.isArray(importedData)) {
-                    // Append imported data to existing files array
-                    files = [...files, ...importedData];
-                    try {
-                        saveToLocalStorage();
-                    } catch (error) {
-                        if (error.name === 'QuotaExceededError' || error.message.includes('exceeded the quota')) {
-                            alert("The imported file is too large to be saved to your browser's local storage. You can still view the images, but they won't be saved for your next session.");
-                        } else {
-                            throw error; // re-throw other errors
-                        }
-                    }
-                    showImages();
-                    alert(`Import successful! ${importedData.length} item(s) have been added to your collection.`);
-                } else {
-                    alert("Invalid JSON format. Expected an array.");
-                }
+                importedData = JSON.parse(event.target.result);
             } catch (error) {
                 alert("Error parsing JSON file: " + error.message);
+                return;
+            }
+
+            try {
+                if (!Array.isArray(importedData)) {
+                    alert("Invalid JSON format. Expected an array.");
+                    return;
+                }
+
+                const { accepted, rejected } = sanitizeImportedItems(importedData);
+                if (accepted.length === 0) {
+                    alert("Import failed. No valid entries were found in the selected JSON file.");
+                    return;
+                }
+
+                const mergedFiles = [...files, ...accepted];
+                const incomingSize = estimateSerializedSize(accepted);
+                const usageEstimate = await storageAdapter.getUsageEstimate();
+
+                if (usageEstimate && usageEstimate.quota && usageEstimate.usage) {
+                    const remaining = Math.max(usageEstimate.quota - usageEstimate.usage, 0);
+                    if (incomingSize > remaining && remaining > 0) {
+                        showStorageStatus(
+                            `Large import detected (${formatBytes(incomingSize)}). If saving fails, export JSON to Windows immediately.`,
+                            "warning",
+                            9000
+                        );
+                    }
+                }
+
+                files = mergedFiles;
+                showImages();
+
+                try {
+                    await persistFiles(files, { silent: true });
+                    const importMessage = rejected > 0
+                        ? `Import complete. Added ${accepted.length} item(s), skipped ${rejected} invalid item(s).`
+                        : `Import complete. Added ${accepted.length} item(s).`;
+
+                    alert(importMessage);
+                    showStorageStatus("Import saved to browser storage.", "success", 6000);
+                } catch (error) {
+                    if (isQuotaExceededError(error)) {
+                        showStorageStatus("Storage is full. Export JSON to save your current collection on Windows.", "warning", 10000);
+                        alert("The imported content is visible now, but browser storage is full. Export JSON now so your collection is not lost.");
+                    } else {
+                        throw error;
+                    }
+                }
+            } catch (error) {
+                alert("Import failed: " + error.message);
             }
         };
         reader.readAsText(file);
