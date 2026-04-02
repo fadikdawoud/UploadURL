@@ -87,13 +87,16 @@ h2 {
 /* /////////////////////////////////////////////////////////// */
 section {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    column-gap: 40px;
-    row-gap: 40px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 20px;
+    row-gap: 36px;
+    margin-bottom: 82px;
+    /* padding-inline: 12px; */
 }
 
 .holder {
-    width: 400px;
+    width: 100%;
+    aspect-ratio: 4 / 3;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -129,6 +132,11 @@ gif-player {
     max-height: 100%;
     align-self: center; /* Center-aligns vertically */
     justify-self: center; /* Center-aligns horizontally */
+}
+
+.holder gif-player {
+    width: 100% !important;
+    height: 100% !important;
 }
 
 .imglook:hover,
