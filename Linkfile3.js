@@ -327,6 +327,12 @@ const normalizeImportedItem = (item) => {
         return url && thumbnail ? { type: "youtube", url, thumbnail } : null;
     }
 
+    if (item.type === "codepen" && typeof item.url === "string" && typeof item.thumbnail === "string") {
+        const url = item.url.trim();
+        const thumbnail = item.thumbnail.trim();
+        return url && thumbnail ? { type: "codepen", url, thumbnail } : null;
+    }
+
     if (item.type === "link" && typeof item.url === "string") {
         const url = item.url.trim();
         return url ? { type: "link", url } : null;
@@ -400,6 +406,34 @@ const applyGifInteractionMode = (container = document) => {
     });
 };
 
+const normalizeGridGifCanvas = (player) => {
+    if (!player || !player.shadowRoot) return;
+    const canvas = player.shadowRoot.querySelector("canvas");
+    if (!canvas) return;
+
+    canvas.style.transform = "none";
+    if (!canvas.style.top) {
+        canvas.style.top = "0px";
+    }
+    if (!canvas.style.left) {
+        canvas.style.left = "0px";
+    }
+};
+
+const setupGridGifSizing = (container) => {
+    container.querySelectorAll(".holder gif-player").forEach((player) => {
+        const applySizing = () => {
+            requestAnimationFrame(() => normalizeGridGifCanvas(player));
+        };
+
+        player.addEventListener("gif-loaded", applySizing, { once: true });
+
+        if (player._gif) {
+            applySizing();
+        }
+    });
+};
+
 patchGifPlayerModeGuards();
 
 if (window.customElements && typeof window.customElements.whenDefined === "function") {
@@ -411,7 +445,13 @@ if (window.customElements && typeof window.customElements.whenDefined === "funct
 
 const initializePersistedFiles = async () => {
     files = await storageAdapter.loadFiles();
+    const upgraded = upgradeCodepenEntries(files);
+    files = upgraded.items;
     showImages();
+
+    if (upgraded.didChange) {
+        await persistFiles(files, { silent: true });
+    }
 
     const usageEstimate = await storageAdapter.getUsageEstimate();
     if (!usageEstimate || !usageEstimate.quota || !usageEstimate.usage) return;
@@ -523,6 +563,12 @@ const handleDragLeave = () => {
     dropArea.classList.remove("dragover");
 };
 
+const extractFirstUrl = (text) => {
+    if (typeof text !== "string") return "";
+    const match = text.match(/https?:\/\/[^\s<>"')]+/i);
+    return match ? match[0] : "";
+};
+
 const getDroppedUrl = (dataTransfer) => {
     if (!dataTransfer) return "";
 
@@ -536,7 +582,10 @@ const getDroppedUrl = (dataTransfer) => {
     }
 
     const plainText = dataTransfer.getData("text/plain");
-    return plainText ? plainText.trim() : "";
+    if (!plainText) return "";
+
+    const extracted = extractFirstUrl(plainText);
+    return extracted ? extracted.trim() : plainText.trim();
 };
 
 const handleWindowDragLeave = (e) => {
@@ -581,6 +630,8 @@ const handleDrop = async (e) => {
             handleDroppedUrl(droppedUrl);
         } else if (isYouTubeUrl(droppedUrl)) {
             handleYouTubeUrl(droppedUrl);
+        } else if (isCodepenUrl(droppedUrl)) {
+            handleCodepenUrl(droppedUrl);
         } else {
             handleGenericLink(droppedUrl);
         }
@@ -640,6 +691,11 @@ const handleDroppedUrl = (url) => {
         return;
     }
 
+    if (isCodepenUrl(normalizedUrl)) {
+        handleCodepenUrl(normalizedUrl);
+        return;
+    }
+
     if (isImageUrl(normalizedUrl)) {
         const entry = normalizedUrl.toLowerCase().endsWith(".gif")
             ? { src: normalizedUrl, type: "gif" }
@@ -668,8 +724,78 @@ const handleYouTubeUrl = (url) => {
     }
 };
 
+const buildCodepenEntry = (url) => {
+    if (typeof url !== "string") return null;
+    const normalizedUrl = url.trim();
+    const match = normalizedUrl.match(/^https?:\/\/(?:www\.)?codepen\.io\/([^\/]+)\/(?:pen|full)\/([^\/?#]+)/i);
+    if (!match) return null;
+
+    const username = match[1];
+    const id = match[2];
+
+    return {
+        type: "codepen",
+        url: normalizedUrl,
+        thumbnail: `https://shots.codepen.io/${username}/pen/${id}-800.jpg`,
+        thumbnailFallback: `https://shots.codepen.io/${username}/pen/${id}-800.webp`
+    };
+};
+
+const handleCodepenUrl = (url) => {
+    const codepenData = buildCodepenEntry(url);
+    if (codepenData) {
+        appendEntriesAndPersist([codepenData]);
+    } else {
+        console.error("Invalid Codepen URL.");
+    }
+};
+
+const upgradeCodepenEntries = (items = []) => {
+    let didChange = false;
+
+    const upgradedItems = items.map((item) => {
+        if (typeof item === "string") {
+            const entry = buildCodepenEntry(item);
+            if (entry) {
+                didChange = true;
+                return entry;
+            }
+            return item;
+        }
+
+        if (!item || typeof item !== "object") return item;
+
+        if (item.type === "codepen") {
+            if (!item.thumbnail || typeof item.thumbnail !== "string") {
+                const entry = buildCodepenEntry(item.url || "");
+                if (entry) {
+                    didChange = true;
+                    return { ...entry, url: item.url || entry.url };
+                }
+            }
+            return item;
+        }
+
+        if (item.type === "link" && typeof item.url === "string") {
+            const entry = buildCodepenEntry(item.url);
+            if (entry) {
+                didChange = true;
+                return entry;
+            }
+        }
+
+        return item;
+    });
+
+    return { items: upgradedItems, didChange };
+};
+
 
 const handleGenericLink = (url) => {
+    if (isCodepenUrl(url)) {
+        handleCodepenUrl(url);
+        return;
+    }
     const linkData = {
         type: "link",
         url: url
@@ -686,6 +812,11 @@ const isYouTubeUrl = (url) => {
     return pattern.test(url);
 };
 
+const isCodepenUrl = (url) => {
+    const pattern = /^https?:\/\/(?:www\.)?codepen\.io\/[^\/]+\/(?:pen|full)\/[^\/?#]+/i;
+    return pattern.test(url);
+};
+
 const getYouTubeVideoId = (url) => {
     const match = url.match(/[?&]v=([^&#]*)|youtu\.be\/([^&#]*)/);
     return match ? match[1] || match[2] : null;
@@ -697,7 +828,7 @@ const renderImages = () => {
     files.forEach((e, i) => {
         if (typeof e === "string") { // Regular image
             const imgTag = e.toLowerCase().endsWith(".gif") 
-                ? `<gif-player src="${e}" class="imglook" id="gif-${i}" data-preview-index="${i}" speed="1"></gif-player>` 
+                ? `<gif-player src="${e}" class="imglook" id="gif-${i}" data-preview-index="${i}" speed="1" size="cover"></gif-player>` 
                 : `<img class="imglook" src="${e}" id="img-${i}" data-preview-index="${i}" loading="lazy" decoding="async">`;
 
             images += `
@@ -711,7 +842,7 @@ const renderImages = () => {
             images += `
                 <div class="hidden" draggable="true" data-item-index="${i}">
                     <div class="holder">
-                        <gif-player src="${e.src}" class="imglook" id="gif-${i}" data-preview-index="${i}"></gif-player>
+                        <gif-player src="${e.src}" class="imglook" id="gif-${i}" data-preview-index="${i}" size="cover"></gif-player>
                         <span onclick="deleteImage(${i})">&#10006;</span>
                     </div>
                 </div>`;
@@ -721,6 +852,16 @@ const renderImages = () => {
                     <div class="holder">
                         <a href="${e.url}" target="_blank">
                             <img src="${e.thumbnail}" alt="YouTube Video" loading="lazy" decoding="async">
+                        </a>
+                        <span onclick="deleteImage(${i})">&#10006;</span>
+                    </div>
+                </div>`;
+        } else if (e.type === "codepen") { // Codepen thumbnail
+            images += `
+                <div class="hidden" draggable="true" data-item-index="${i}">
+                    <div class="holder">
+                        <a href="${e.url}" target="_blank">
+                            <img src="${e.thumbnail}" alt="Codepen Preview" loading="lazy" decoding="async" data-fallback="${e.thumbnailFallback || ""}">
                         </a>
                         <span onclick="deleteImage(${i})">&#10006;</span>
                     </div>
@@ -737,7 +878,17 @@ const renderImages = () => {
     });
 
     cardContainer.innerHTML = images;
+    cardContainer.querySelectorAll("img[data-fallback]").forEach((img) => {
+        const fallback = img.dataset.fallback;
+        if (!fallback) return;
+        img.addEventListener("error", () => {
+            if (img.dataset.fallbackApplied === "1") return;
+            img.dataset.fallbackApplied = "1";
+            img.src = fallback;
+        });
+    });
     applyGifInteractionMode(cardContainer);
+    setupGridGifSizing(cardContainer);
     observeHiddenElements();
 };
 
@@ -838,7 +989,8 @@ cardContainer.addEventListener("click", (event) => {
     if (!holder) return;
 
     const isYouTubeCard = Boolean(holder.querySelector("a[href*='youtube']"));
-    if (isYouTubeCard) return;
+    const isCodepenCard = Boolean(holder.querySelector("a[href*='codepen']"));
+    if (isYouTubeCard || isCodepenCard) return;
 
     const index = Number(mediaElement.dataset.previewIndex);
     if (!Number.isFinite(index)) return;
@@ -1082,6 +1234,13 @@ const showPreview = (index) => {
                 <img src="${file.thumbnail}" alt="YouTube Video Preview">
             </a>
         `;
+    } else if (file.type === "codepen") {
+        previewContent = `
+            <span class="preview-close">&#10006;</span>
+            <a href="${file.url}" target="_blank">
+                <img src="${file.thumbnail}" alt="Codepen Preview">
+            </a>
+        `;
     } else if (file.type === "link") {
         previewContent = `
             <span class="preview-close">&#10006;</span>
@@ -1169,17 +1328,13 @@ const observeHiddenElements = () => {
                 return;
             }
 
-            if (entry.isIntersecting) {
-                if (!isScrollModeActive() && typeof gridGifPlayer.start === "function" && !gridGifPlayer.playing) {
-                    gridGifPlayer.start();
-                    gridGifPlayer.paused = false;
-                }
-            } else {
-                if (typeof gridGifPlayer.pausePlayback === "function") {
-                    gridGifPlayer.pausePlayback();
-                }
-                gridGifPlayer.stop();
-                gridGifPlayer.paused = true;
+            if (typeof gridGifPlayer.pausePlayback === "function") {
+                gridGifPlayer.pausePlayback();
+            }
+            gridGifPlayer.stop();
+            gridGifPlayer.paused = true;
+            if (!isScrollModeActive()) {
+                gridGifPlayer.frame = 0;
             }
         });
     }, {
@@ -1223,6 +1378,8 @@ const addImageUrl = () => {
     if (imageUrl !== "") {
         if (isYouTubeUrl(imageUrl)) {
             handleYouTubeUrl(imageUrl);
+        } else if (isCodepenUrl(imageUrl)) {
+            handleCodepenUrl(imageUrl);
         } else if (isImageUrl(imageUrl)) {
             handleDroppedUrl(imageUrl);
         } else {
@@ -1292,13 +1449,15 @@ jsonInput.addEventListener("change", (e) => {
                 }
 
                 const { accepted, rejected } = sanitizeImportedItems(importedData);
-                if (accepted.length === 0) {
+                const upgraded = upgradeCodepenEntries(accepted);
+                const acceptedItems = upgraded.items;
+                if (acceptedItems.length === 0) {
                     alert("Import failed. No valid entries were found in the selected JSON file.");
                     return;
                 }
 
-                const mergedFiles = [...files, ...accepted];
-                const incomingSize = estimateSerializedSize(accepted);
+                const mergedFiles = [...files, ...acceptedItems];
+                const incomingSize = estimateSerializedSize(acceptedItems);
                 const usageEstimate = await storageAdapter.getUsageEstimate();
 
                 if (usageEstimate && usageEstimate.quota && usageEstimate.usage) {
@@ -1318,8 +1477,8 @@ jsonInput.addEventListener("change", (e) => {
                 try {
                     await persistFiles(files, { silent: true });
                     const importMessage = rejected > 0
-                        ? `Import complete. Added ${accepted.length} item(s), skipped ${rejected} invalid item(s).`
-                        : `Import complete. Added ${accepted.length} item(s).`;
+                        ? `Import complete. Added ${acceptedItems.length} item(s), skipped ${rejected} invalid item(s).`
+                        : `Import complete. Added ${acceptedItems.length} item(s).`;
 
                     alert(importMessage);
                     showStorageStatus("Import saved to browser storage.", "success", 6000);
