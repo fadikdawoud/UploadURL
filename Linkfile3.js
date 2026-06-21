@@ -654,31 +654,111 @@ document.addEventListener("drop", handleDrop);
 document.addEventListener("dragend", handleDragLeave);
 window.addEventListener("dragleave", handleWindowDragLeave);
 
-imageInput.addEventListener("change", () => {
+imageInput.addEventListener("change", (e) => {
     const selectedFiles = imageInput.files;
     void handleDroppedFiles(selectedFiles);
+    e.target.value = "";
 });
 
 const handleDroppedFiles = async (fileList) => {
     const selectedFiles = Array.from(fileList || []);
     if (selectedFiles.length === 0) return;
 
-    const results = await Promise.allSettled(selectedFiles.map((file) => readFileAsLibraryEntry(file)));
+    const imageFiles = [];
+    const jsonFiles = [];
+
+    for (const file of selectedFiles) {
+        if (file.type === "application/json" || file.name.toLowerCase().endsWith(".json")) {
+            jsonFiles.push(file);
+        } else {
+            imageFiles.push(file);
+        }
+    }
+
     const accepted = [];
     let failed = 0;
+    let jsonRejectedItems = 0;
+    let jsonErrors = [];
 
-    results.forEach((result) => {
-        if (result.status === "fulfilled") {
-            accepted.push(result.value);
-        } else {
-            failed += 1;
+    if (imageFiles.length > 0) {
+        const results = await Promise.allSettled(imageFiles.map((file) => readFileAsLibraryEntry(file)));
+        results.forEach((result) => {
+            if (result.status === "fulfilled") {
+                accepted.push(result.value);
+            } else {
+                failed += 1;
+            }
+        });
+    }
+
+    for (const file of jsonFiles) {
+        try {
+            const text = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = e => resolve(e.target.result);
+                reader.onerror = () => reject(reader.error);
+                reader.readAsText(file);
+            });
+            const importedData = JSON.parse(text);
+            if (!Array.isArray(importedData)) {
+                jsonErrors.push(`Invalid format in ${file.name}: expected an array.`);
+                continue;
+            }
+            const { accepted: validItems, rejected } = sanitizeImportedItems(importedData);
+            const upgraded = upgradeCodepenEntries(validItems);
+            accepted.push(...upgraded.items);
+            jsonRejectedItems += rejected;
+        } catch (error) {
+            jsonErrors.push(`Error parsing ${file.name}: ` + error.message);
         }
-    });
+    }
 
-    appendEntriesAndPersist(accepted);
+    if (accepted.length > 0) {
+        const incomingSize = estimateSerializedSize(accepted);
+        const usageEstimate = await storageAdapter.getUsageEstimate();
 
-    if (failed > 0) {
-        showStorageStatus(`Added ${accepted.length} item(s). ${failed} file(s) failed to read.`, "warning", 7000);
+        if (usageEstimate && usageEstimate.quota && usageEstimate.usage) {
+            const remaining = Math.max(usageEstimate.quota - usageEstimate.usage, 0);
+            if (incomingSize > remaining && remaining > 0) {
+                showStorageStatus(
+                    `Large import detected (${formatBytes(incomingSize)}). If saving fails, export JSON to Windows immediately.`,
+                    "warning",
+                    9000
+                );
+            }
+        }
+
+        files.push(...accepted);
+        showImages();
+
+        try {
+            await persistFiles(files, { silent: true });
+            
+            let statusMsg = `Added ${accepted.length} item(s).`;
+            if (failed > 0) statusMsg += ` ${failed} file(s) failed to read.`;
+            if (jsonRejectedItems > 0) statusMsg += ` Skipped ${jsonRejectedItems} invalid JSON item(s).`;
+            
+            showStorageStatus(statusMsg, failed > 0 || jsonRejectedItems > 0 ? "warning" : "success", 7000);
+            
+            if (jsonErrors.length > 0) {
+                alert(jsonErrors.join("\n"));
+            }
+        } catch (error) {
+            if (isQuotaExceededError(error)) {
+                showStorageStatus("Storage is full. Export JSON to save your current collection on Windows.", "warning", 10000);
+                alert("The imported content is visible now, but browser storage is full. Export JSON now so your collection is not lost.");
+            } else {
+                showStorageStatus("Could not save to browser storage right now.", "error", 7000);
+            }
+        }
+    } else {
+        if (jsonErrors.length > 0) {
+            alert(jsonErrors.join("\n"));
+        } else if (failed > 0) {
+            showStorageStatus(`${failed} file(s) failed to read.`, "error", 7000);
+        } else if (jsonFiles.length > 0) {
+            alert("No valid entries were found in the selected JSON file(s).");
+        }
     }
 };
 
