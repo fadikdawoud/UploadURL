@@ -480,7 +480,8 @@ gif-player {
     box-sizing: border-box;
 }
 
-.popup-gif {
+.popup-gif,
+.popup-video {
     position: relative;
     display: block;
     width: 85vw !important;
@@ -560,8 +561,58 @@ gif-player {
     text-align: center;
 }
 
+.PopUpPreview video.popup-video {
+    object-fit: contain;
+    background-color: #000;
+}
+
+.video-controls .video-time-label {
+    min-width: 78px;
+}
+
+.video-mute-toggle {
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: white;
+    font-size: 15px;
+    padding: 6px 10px;
+    cursor: pointer;
+    transition:
+        background-color 0.2s ease,
+        transform 0.2s ease,
+        opacity 0.2s ease;
+    min-width: 36px;
+    min-height: 30px;
+    line-height: 1;
+    text-align: center;
+}
+
+.video-mute-toggle:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.video-mute-toggle:active:not(:disabled) {
+    transform: scale(0.95);
+}
+
+.video-volume-slider {
+    width: 80px;
+    height: 4px;
+    cursor: pointer;
+    margin: 0 4px;
+    accent-color: white;
+}
+
+.video-mute-toggle.volume-disabled,
+.video-volume-slider.volume-disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
 @media (max-width: 900px) {
-    .popup-gif {
+    .popup-gif,
+    .popup-video {
         width: 95vw !important;
         height: 75vh !important;
         max-width: 95vw !important;
@@ -583,6 +634,20 @@ gif-player {
     .gif-prev-frame,
     .gif-next-frame {
         padding: 5px 8px;
+        font-size: 12px;
+    }
+
+    .video-volume-slider {
+        width: 50px;
+    }
+
+    .video-mute-toggle {
+        padding: 5px 8px;
+        font-size: 13px;
+    }
+
+    .video-controls .video-time-label {
+        min-width: 62px;
         font-size: 12px;
     }
 

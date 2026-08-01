@@ -321,6 +321,11 @@ const normalizeImportedItem = (item) => {
         return src ? { type: "gif", src } : null;
     }
 
+    if (item.type === "video" && typeof item.src === "string") {
+        const src = item.src.trim();
+        return src ? { type: "video", src } : null;
+    }
+
     if (item.type === "youtube" && typeof item.url === "string" && typeof item.thumbnail === "string") {
         const url = item.url.trim();
         const thumbnail = item.thumbnail.trim();
@@ -500,8 +505,17 @@ const readFileAsLibraryEntry = (file) => {
 
         reader.onload = (event) => {
             const fileUrl = event.target.result;
-            const isGif = typeof file.type === "string" && file.type.toLowerCase().includes("gif");
-            resolve(isGif ? { src: fileUrl, type: "gif" } : fileUrl);
+            const fileType = typeof file.type === "string" ? file.type.toLowerCase() : "";
+            const isGif = fileType.includes("gif");
+            const isVideo = fileType.startsWith("video/") || isVideoFileName(file.name);
+
+            if (isGif) {
+                resolve({ src: fileUrl, type: "gif" });
+            } else if (isVideo) {
+                resolve({ src: fileUrl, type: "video" });
+            } else {
+                resolve(fileUrl);
+            }
         };
 
         reader.onerror = () => reject(reader.error || new Error("Could not read file."));
@@ -520,7 +534,7 @@ const appendEntriesAndPersist = (entries) => {
 const handlePasteEvent = async (e) => {
     const items = e.clipboardData ? Array.from(e.clipboardData.items || []) : [];
     const pastedFiles = items
-        .filter((item) => item.type && item.type.indexOf("image") !== -1)
+        .filter((item) => item.type && (item.type.indexOf("image") !== -1 || item.type.indexOf("video") !== -1))
         .map((item) => item.getAsFile())
         .filter(Boolean);
 
@@ -625,16 +639,8 @@ const handleDrop = async (e) => {
         const droppedUrl = getDroppedUrl(e.dataTransfer);
         if (!droppedUrl) return;
 
-        // Check if the URL points to an image or YouTube video or is a generic link
-        if (isImageUrl(droppedUrl)) {
-            handleDroppedUrl(droppedUrl);
-        } else if (isYouTubeUrl(droppedUrl)) {
-            handleYouTubeUrl(droppedUrl);
-        } else if (isCodepenUrl(droppedUrl)) {
-            handleCodepenUrl(droppedUrl);
-        } else {
-            handleGenericLink(droppedUrl);
-        }
+        // handleDroppedUrl already routes YouTube/Codepen/video/image/generic links.
+        handleDroppedUrl(droppedUrl);
     }
 };
 
@@ -776,6 +782,11 @@ const handleDroppedUrl = (url) => {
         return;
     }
 
+    if (isVideoUrl(normalizedUrl)) {
+        appendEntriesAndPersist([{ type: "video", src: normalizedUrl }]);
+        return;
+    }
+
     if (isImageUrl(normalizedUrl)) {
         const entry = normalizedUrl.toLowerCase().endsWith(".gif")
             ? { src: normalizedUrl, type: "gif" }
@@ -887,6 +898,19 @@ const isImageUrl = (url) => {
     return url.toLowerCase().match(/\.(jpeg|jpg|gif|png|webp)$/) !== null;
 };
 
+const VIDEO_EXTENSIONS = ["mp4", "webm", "ogv", "ogg", "mov", "m4v", "avi", "mkv", "3gp"];
+
+const isVideoFileName = (name) => {
+    if (typeof name !== "string") return false;
+    const match = name.toLowerCase().match(/\.([a-z0-9]+)$/);
+    return match ? VIDEO_EXTENSIONS.includes(match[1]) : false;
+};
+
+const isVideoUrl = (url) => {
+    if (typeof url !== "string") return false;
+    return new RegExp(`\\.(${VIDEO_EXTENSIONS.join("|")})(\\?.*)?(#.*)?$`, "i").test(url.trim());
+};
+
 const isYouTubeUrl = (url) => {
     const pattern = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/;
     return pattern.test(url);
@@ -923,6 +947,14 @@ const renderImages = () => {
                 <div class="hidden" draggable="true" data-item-index="${i}">
                     <div class="holder">
                         <gif-player src="${e.src}" class="imglook" id="gif-${i}" data-preview-index="${i}" size="cover"></gif-player>
+                        <span onclick="deleteImage(${i})">&#10006;</span>
+                    </div>
+                </div>`;
+        } else if (e.type === "video") { // Uploaded/linked video thumbnail
+            images += `
+                <div class="hidden" draggable="true" data-item-index="${i}">
+                    <div class="holder">
+                        <video class="imglook" src="${e.src}" id="video-${i}" data-preview-index="${i}" preload="metadata" muted playsinline></video>
                         <span onclick="deleteImage(${i})">&#10006;</span>
                     </div>
                 </div>`;
@@ -1086,6 +1118,11 @@ const closePreview = () => {
     if (typeof previewContainer._cleanupGifControls === "function") {
         previewContainer._cleanupGifControls();
         previewContainer._cleanupGifControls = null;
+    }
+
+    if (typeof previewContainer._cleanupVideoControls === "function") {
+        previewContainer._cleanupVideoControls();
+        previewContainer._cleanupVideoControls = null;
     }
 
     previewContainer.style.display = "none";
@@ -1252,6 +1289,191 @@ const setupGifPlaybackControls = (previewContainer) => {
     };
 };
 
+const formatVideoTime = (seconds) => {
+    if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${String(secs).padStart(2, "0")}`;
+};
+
+// Detects whether a video actually carries an audio track. There is no single
+// cross-browser API for this: Firefox exposes `mozHasAudio` immediately, Chrome/Edge
+// expose `audioTracks`, and WebKit only populates `webkitAudioDecodedByteCount` once
+// some audio has actually been decoded. When none of those signals are available
+// up front, the decode-based checks are probed on a detached, invisible clone so the
+// real preview element is never played or seeked - it stays paused on the poster
+// frame the whole time. Falls back to "has audio" (true) so a detection failure never
+// wrongly silences a video that does have sound.
+const detectHasAudioTrack = (video) => {
+    const checkSignals = (el) => {
+        if (typeof el.mozHasAudio === "boolean") return el.mozHasAudio;
+        if (el.audioTracks && typeof el.audioTracks.length === "number" && el.audioTracks.length > 0) {
+            return true;
+        }
+        if (typeof el.webkitAudioDecodedByteCount === "number" && el.webkitAudioDecodedByteCount > 0) {
+            return true;
+        }
+        return null;
+    };
+
+    const immediate = checkSignals(video);
+    if (immediate !== null) {
+        return Promise.resolve(immediate);
+    }
+
+    return new Promise((resolve) => {
+        const probe = document.createElement("video");
+        probe.src = video.currentSrc || video.src;
+        probe.muted = true;
+        probe.setAttribute("playsinline", "");
+        probe.style.position = "fixed";
+        probe.style.width = "1px";
+        probe.style.height = "1px";
+        probe.style.opacity = "0";
+        probe.style.pointerEvents = "none";
+        document.body.appendChild(probe);
+
+        let settled = false;
+        const finish = (result) => {
+            if (settled) return;
+            settled = true;
+            probe.removeEventListener("timeupdate", onProbeTick);
+            clearTimeout(timeoutId);
+            probe.pause();
+            probe.remove();
+            resolve(result);
+        };
+
+        const onProbeTick = () => {
+            const result = checkSignals(probe);
+            if (result !== null) finish(result);
+        };
+
+        probe.addEventListener("timeupdate", onProbeTick);
+        const timeoutId = setTimeout(() => finish(true), 3000);
+
+        const playPromise = probe.play();
+        if (playPromise && typeof playPromise.catch === "function") {
+            playPromise.catch(() => finish(true));
+        }
+    });
+};
+
+const setupVideoPlaybackControls = (previewContainer) => {
+    const video = previewContainer.querySelector(".popup-video");
+    const controls = previewContainer.querySelector(".video-controls");
+    if (!video || !controls) return;
+
+    const playPauseBtn = controls.querySelector(".video-play-pause");
+    const seekSlider = controls.querySelector(".video-seek-slider");
+    const timeLabel = controls.querySelector(".video-time-label");
+    const muteBtn = controls.querySelector(".video-mute-toggle");
+    const volumeSlider = controls.querySelector(".video-volume-slider");
+
+    if (!playPauseBtn || !seekSlider || !timeLabel || !muteBtn || !volumeSlider) return;
+
+    let isDraggingSeek = false;
+    let hasAudioTrack = true;
+    let lastVolumeBeforeMute = video.volume > 0 ? video.volume : 1;
+
+    const updatePlayPauseLabel = () => {
+        playPauseBtn.innerHTML = video.paused ? "&#9654;" : "&#9208;";
+    };
+
+    const updateTimeUi = () => {
+        const duration = Number.isFinite(video.duration) ? video.duration : 0;
+        seekSlider.max = String(duration || 0);
+        if (!isDraggingSeek) {
+            seekSlider.value = String(video.currentTime || 0);
+        }
+        timeLabel.textContent = `${formatVideoTime(video.currentTime)} / ${formatVideoTime(duration)}`;
+    };
+
+    const updateVolumeUi = () => {
+        if (!hasAudioTrack) {
+            muteBtn.innerHTML = "&#128263;";
+            muteBtn.disabled = true;
+            muteBtn.classList.add("volume-disabled");
+            volumeSlider.disabled = true;
+            volumeSlider.classList.add("volume-disabled");
+            volumeSlider.value = "0";
+            return;
+        }
+
+        muteBtn.disabled = false;
+        muteBtn.classList.remove("volume-disabled");
+        volumeSlider.disabled = false;
+        volumeSlider.classList.remove("volume-disabled");
+        muteBtn.innerHTML = video.muted || video.volume === 0 ? "&#128263;" : "&#128266;";
+        volumeSlider.value = String(video.muted ? 0 : video.volume);
+    };
+
+    playPauseBtn.addEventListener("click", () => {
+        if (video.paused) {
+            video.play();
+        } else {
+            video.pause();
+        }
+    });
+
+    seekSlider.addEventListener("input", (event) => {
+        isDraggingSeek = true;
+        timeLabel.textContent = `${formatVideoTime(Number(event.target.value))} / ${formatVideoTime(video.duration)}`;
+    });
+
+    seekSlider.addEventListener("change", (event) => {
+        isDraggingSeek = false;
+        video.currentTime = Number(event.target.value);
+    });
+
+    muteBtn.addEventListener("click", () => {
+        if (!hasAudioTrack) return;
+        if (video.muted || video.volume === 0) {
+            video.muted = false;
+            video.volume = lastVolumeBeforeMute > 0 ? lastVolumeBeforeMute : 1;
+        } else {
+            lastVolumeBeforeMute = video.volume;
+            video.muted = true;
+        }
+    });
+
+    volumeSlider.addEventListener("input", (event) => {
+        if (!hasAudioTrack) return;
+        const value = Number(event.target.value);
+        video.volume = value;
+        video.muted = value === 0;
+        if (value > 0) lastVolumeBeforeMute = value;
+    });
+
+    video.addEventListener("play", updatePlayPauseLabel);
+    video.addEventListener("pause", updatePlayPauseLabel);
+    video.addEventListener("timeupdate", updateTimeUi);
+    video.addEventListener("loadedmetadata", updateTimeUi);
+    video.addEventListener("volumechange", updateVolumeUi);
+
+    updatePlayPauseLabel();
+    updateTimeUi();
+    updateVolumeUi();
+
+    detectHasAudioTrack(video).then((hasAudio) => {
+        hasAudioTrack = hasAudio;
+        if (!hasAudio) {
+            video.muted = true;
+        }
+        updatePlayPauseLabel();
+        updateVolumeUi();
+    });
+
+    previewContainer._cleanupVideoControls = () => {
+        video.pause();
+        video.removeEventListener("play", updatePlayPauseLabel);
+        video.removeEventListener("pause", updatePlayPauseLabel);
+        video.removeEventListener("timeupdate", updateTimeUi);
+        video.removeEventListener("loadedmetadata", updateTimeUi);
+        video.removeEventListener("volumechange", updateVolumeUi);
+    };
+};
+
 // Function to show preview for a specific index
 const showPreview = (index) => {
     if (index < 0 || index >= files.length) return;
@@ -1262,6 +1484,11 @@ const showPreview = (index) => {
     if (typeof previewContainer._cleanupGifControls === "function") {
         previewContainer._cleanupGifControls();
         previewContainer._cleanupGifControls = null;
+    }
+
+    if (typeof previewContainer._cleanupVideoControls === "function") {
+        previewContainer._cleanupVideoControls();
+        previewContainer._cleanupVideoControls = null;
     }
 
     previewContainer.style.display = "block";
@@ -1307,6 +1534,20 @@ const showPreview = (index) => {
                 ` : ""}
             </div>
         `;
+    } else if (file.type === "video") {
+        previewContent = `
+            <span class="preview-close">&#10006;</span>
+            <div class="popup-gif-stage">
+                <video src="${file.src}" class="popup-video" playsinline></video>
+                <div class="gif-controls video-controls">
+                    <button type="button" class="gif-play-pause video-play-pause" title="Play / Pause">&#9654;</button>
+                    <input type="range" class="gif-frame-slider video-seek-slider" min="0" max="0" value="0" step="0.1">
+                    <div class="gif-frame-label video-time-label">0:00 / 0:00</div>
+                    <button type="button" class="video-mute-toggle" title="Mute / Unmute">&#128266;</button>
+                    <input type="range" class="video-volume-slider" min="0" max="1" value="1" step="0.01" title="Volume">
+                </div>
+            </div>
+        `;
     } else if (file.type === "youtube") {
         previewContent = `
             <span class="preview-close">&#10006;</span>
@@ -1333,7 +1574,8 @@ const showPreview = (index) => {
     previewContainer.innerHTML = previewContent;
     applyGifInteractionMode(previewContainer);
     setupGifPlaybackControls(previewContainer);
-    
+    setupVideoPlaybackControls(previewContainer);
+
     // Add close button functionality
     const closeBtn = document.querySelector(".PopUpPreview .preview-close");
     if (closeBtn) {
@@ -1456,15 +1698,8 @@ const addImageUrl = () => {
     const imageUrl = imageUrlInput.value.trim();
 
     if (imageUrl !== "") {
-        if (isYouTubeUrl(imageUrl)) {
-            handleYouTubeUrl(imageUrl);
-        } else if (isCodepenUrl(imageUrl)) {
-            handleCodepenUrl(imageUrl);
-        } else if (isImageUrl(imageUrl)) {
-            handleDroppedUrl(imageUrl);
-        } else {
-            handleGenericLink(imageUrl);
-        }
+        // handleDroppedUrl routes YouTube/Codepen/video/image/generic links.
+        handleDroppedUrl(imageUrl);
         imageUrlInput.value = "";
     }
 };
