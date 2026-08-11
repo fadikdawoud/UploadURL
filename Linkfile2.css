@@ -85,18 +85,20 @@ h2 {
     font-weight: normal;
 }
 /* /////////////////////////////////////////////////////////// */
+/* Masonry via row spans: keeps left-to-right card order, unlike column-count. */
 section {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-flow: row;
+    grid-auto-rows: 4px;
     column-gap: 20px;
-    row-gap: 36px;
+    row-gap: 0;
     margin-bottom: 82px;
     /* padding-inline: 12px; */
 }
 
 .holder {
     width: 100%;
-    aspect-ratio: 4 / 3;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -111,11 +113,12 @@ section {
 }
 
 .imglook,
-.holder a img {
+.holder a img,
+.holder video {
     width: 100%;
-    height: 100%;
-
-    object-fit: cover;
+    height: auto;
+    display: block;
+    object-fit: contain;
     transition: transform 0.7s;
     transition-delay: 0.2s;
     transform: scale(1);
@@ -125,7 +128,7 @@ section {
 
 gif-player {
     width: 100%;
-    height: 100%;
+    height: auto;
     object-fit: contain; /* Ensures proper containment of large GIFs */
     display: block;
     max-width: 100%;
@@ -136,7 +139,7 @@ gif-player {
 
 .holder gif-player {
     width: 100% !important;
-    height: 100% !important;
+    height: auto !important;
 }
 
 .imglook:hover,
@@ -170,6 +173,17 @@ gif-player {
     opacity: 1;
     content-visibility: auto;
     contain-intrinsic-size: 360px 260px;
+    margin-bottom: 36px;
+    display: block;
+    width: 100%;
+    align-self: start;
+    /* --card-span is measured in JS; the fallback covers cards not measured yet. */
+    grid-row-end: span var(--card-span, 80);
+}
+
+/* Cards must render at full height while their spans are being measured. */
+.section.masonry-measuring .hidden {
+    content-visibility: visible;
 }
 
 .hidden[draggable="true"] {
@@ -428,6 +442,195 @@ input:checked + .slider:before {
 
 .slider.round:before {
     border-radius: 50%;
+}
+
+/* ============ Layout Menu (3-dot) ============ */
+.layout-menu {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.layout-menu-trigger {
+    background-color: transparent;
+    outline: none;
+    border: none;
+    margin: 0;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    user-select: none;
+    cursor: pointer;
+    transition:
+        transform 0.2s ease,
+        background-color 0.25s ease;
+}
+
+.layout-menu-trigger svg {
+    width: 24px;
+    height: 24px;
+}
+
+.layout-menu-trigger:hover {
+    transform: translateY(-2px);
+}
+
+.layout-menu-trigger:active {
+    transform: scale(0.94);
+}
+
+.layout-menu-trigger:focus-visible {
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+
+.layout-menu.open .layout-menu-trigger {
+    background-color: rgba(255, 255, 255, 0.12);
+    transform: none;
+}
+
+/* ---- Dropdown panel ---- */
+.layout-dropdown {
+    position: absolute;
+    top: calc(100% + 14px);
+    right: -6px;
+    width: 216px;
+    padding: 10px;
+    box-sizing: border-box;
+    border-radius: 12px;
+    background-color: rgb(34, 34, 34);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-6px);
+    transition:
+        opacity 0.18s ease,
+        transform 0.18s ease,
+        visibility 0.18s;
+    z-index: 5;
+}
+
+.layout-menu.open .layout-dropdown {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.layout-dropdown-title {
+    font-family: satoshi-bold;
+    font-size: 9px;
+    letter-spacing: 1.3px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.42);
+    padding: 3px 6px 9px 6px;
+    user-select: none;
+}
+
+.layout-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    user-select: none;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.layout-option:hover {
+    background-color: rgba(255, 255, 255, 0.07);
+}
+
+.layout-option-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex: 1;
+    min-width: 0;
+}
+
+.layout-option-title {
+    font-family: satoshi-bold;
+    font-size: 12px;
+    letter-spacing: 0.3px;
+    color: white;
+}
+
+.layout-option-sub {
+    font-family: satoshi-reg;
+    font-size: 9px;
+    letter-spacing: 0.4px;
+    color: rgba(255, 255, 255, 0.45);
+    white-space: nowrap;
+}
+
+/* ---- Toggle switch (matches the Playback/Scroll switch) ---- */
+.layout-switch {
+    flex: none;
+}
+
+.layout-switch input:focus-visible + .slider {
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+}
+
+/* ---- Fixed grid layout override (Crop to Fit) ---- */
+.section.layout-fixed {
+    grid-auto-rows: auto;
+    row-gap: 36px;
+}
+
+.section.layout-fixed .hidden {
+    margin-bottom: 0;
+    grid-row-end: auto;
+    align-self: stretch;
+}
+
+.section.layout-fixed .holder {
+    aspect-ratio: 4 / 3;
+}
+
+.section.layout-fixed .imglook,
+.section.layout-fixed .holder a img,
+.section.layout-fixed .holder video {
+    height: 100%;
+    object-fit: cover;
+}
+
+.section.layout-fixed gif-player,
+.section.layout-fixed .holder gif-player {
+    height: 100% !important;
+}
+
+/* ---- Layout switch settle animation ---- */
+.section.layout-switching .hidden {
+    animation: layoutCardSettle 0.45s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+    animation-delay: var(--layout-stagger, 0ms);
+}
+
+@keyframes layoutCardSettle {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.97);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .section.layout-switching .hidden {
+        animation: none;
+    }
+
+    .layout-dropdown,
+    .layout-option {
+        transition-duration: 0.01ms;
+    }
 }
 
 /* /////////////////////////////////////////////////// */

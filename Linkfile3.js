@@ -499,6 +499,268 @@ const setupGifModeToggle = () => {
 
 setupGifModeToggle();
 
+/* ============ Gallery layout mode (masonry <-> fixed 4:3 grid) ============ */
+const LAYOUT_MODES = Object.freeze({
+    MASONRY: "masonry",
+    FIXED: "fixed"
+});
+
+const LAYOUT_STORAGE_KEY = "gallery_layout_mode_v1";
+const LAYOUT_FIXED_CLASS = "layout-fixed";
+const LAYOUT_SWITCHING_CLASS = "layout-switching";
+
+let layoutAnimationTimer = null;
+
+// The uniform grid is the default; masonry only applies once it has been chosen explicitly.
+const readStoredLayoutMode = () => {
+    try {
+        return localStorage.getItem(LAYOUT_STORAGE_KEY) === LAYOUT_MODES.MASONRY
+            ? LAYOUT_MODES.MASONRY
+            : LAYOUT_MODES.FIXED;
+    } catch (error) {
+        console.warn("Could not read the saved layout mode.", error);
+        return LAYOUT_MODES.FIXED;
+    }
+};
+
+const storeLayoutMode = (mode) => {
+    try {
+        localStorage.setItem(LAYOUT_STORAGE_KEY, mode);
+    } catch (error) {
+        console.warn("Could not save the layout mode.", error);
+    }
+};
+
+let activeLayoutMode = readStoredLayoutMode();
+
+const isFixedLayoutActive = () => activeLayoutMode === LAYOUT_MODES.FIXED;
+
+// GIF canvases are sized against their holder, so they need a nudge after the box changes shape.
+const refreshGridGifCanvases = () => {
+    requestAnimationFrame(() => {
+        cardContainer.querySelectorAll(".holder gif-player").forEach((player) => normalizeGridGifCanvas(player));
+    });
+};
+
+const animateLayoutChange = () => {
+    const cards = Array.from(cardContainer.querySelectorAll(".hidden"));
+    if (cards.length === 0) return;
+
+    cards.forEach((card, index) => {
+        card.style.setProperty("--layout-stagger", `${Math.min(index, 14) * 18}ms`);
+    });
+
+    cardContainer.classList.remove(LAYOUT_SWITCHING_CLASS);
+    void cardContainer.offsetWidth; // restart the animation when toggled repeatedly
+    cardContainer.classList.add(LAYOUT_SWITCHING_CLASS);
+
+    if (layoutAnimationTimer) {
+        clearTimeout(layoutAnimationTimer);
+    }
+
+    layoutAnimationTimer = setTimeout(() => {
+        cardContainer.classList.remove(LAYOUT_SWITCHING_CLASS);
+        cards.forEach((card) => card.style.removeProperty("--layout-stagger"));
+    }, 900);
+};
+
+/* ---- Masonry row spans ----
+   The masonry layout is a grid whose rows are MASONRY_ROW_UNIT tall; every card spans as many
+   rows as its own height needs. Auto-placement then fills cards left to right in DOM order,
+   which column-count could not do. */
+const MASONRY_ROW_UNIT = 4;
+const MASONRY_CARD_GAP = 36;
+const MASONRY_FALLBACK_SPAN = 80;
+const MASONRY_MEASURING_CLASS = "masonry-measuring";
+
+let masonryUpdateHandle = null;
+let masonryResizeTimer = null;
+
+// A card whose media has not loaded yet reports no useful height, so it keeps the fallback span.
+const isCardMeasurable = (card) => {
+    const image = card.querySelector("img");
+    if (image) return image.complete && image.naturalHeight > 0;
+
+    const video = card.querySelector("video");
+    if (video) return video.readyState >= 1;
+
+    const player = card.querySelector("gif-player");
+    if (player) return Boolean(player.shadowRoot && player.shadowRoot.querySelector("canvas"));
+
+    return true;
+};
+
+/* Spans are remembered per library item rather than per position: deleting or adding a card
+   shifts every later position by one, and a position-keyed span would hand each card its
+   neighbour's height. The card would then be sized wrong until its media decoded, spilling
+   over the card below it. */
+let masonrySpanCache = new Map();
+
+const getCardItem = (card) => {
+    const index = Number(card.dataset.itemIndex);
+    return Number.isInteger(index) ? files[index] : undefined;
+};
+
+const applyCachedMasonrySpans = () => {
+    cardContainer.querySelectorAll(".hidden").forEach((card) => {
+        const item = getCardItem(card);
+        if (item === undefined) return;
+
+        const cached = masonrySpanCache.get(item);
+        if (cached !== undefined) {
+            card.style.setProperty("--card-span", cached);
+        }
+    });
+};
+
+const updateMasonrySpans = () => {
+    if (isFixedLayoutActive()) return;
+
+    const cards = Array.from(cardContainer.querySelectorAll(".hidden"));
+    if (cards.length === 0) return;
+
+    // content-visibility skips offscreen cards, which would measure as their placeholder size.
+    cardContainer.classList.add(MASONRY_MEASURING_CLASS);
+
+    const measured = cards.map((card) => {
+        if (!isCardMeasurable(card)) return null;
+
+        const holder = card.querySelector(".holder");
+        const height = holder ? holder.getBoundingClientRect().height : 0;
+        if (height <= 0) return null;
+
+        return Math.max(1, Math.ceil((height + MASONRY_CARD_GAP) / MASONRY_ROW_UNIT));
+    });
+
+    cardContainer.classList.remove(MASONRY_MEASURING_CLASS);
+
+    // Only trust data-item-index while the DOM and the library are in step; a rebuild is
+    // pending otherwise, and caching now would file spans under the wrong items.
+    const indicesAreCurrent = cards.length === files.length;
+    const nextCache = indicesAreCurrent ? new Map() : masonrySpanCache;
+
+    cards.forEach((card, index) => {
+        const item = getCardItem(card);
+        const cached = item === undefined ? undefined : masonrySpanCache.get(item);
+
+        // An unmeasurable card keeps its known height instead of collapsing to the fallback.
+        let span = measured[index];
+        if (span === null) {
+            span = cached === undefined ? MASONRY_FALLBACK_SPAN : cached;
+        }
+
+        card.style.setProperty("--card-span", span);
+
+        if (indicesAreCurrent && item !== undefined) {
+            nextCache.set(item, span); // rebuilding drops entries for deleted items
+        }
+    });
+
+    masonrySpanCache = nextCache;
+};
+
+const scheduleMasonryUpdate = () => {
+    if (masonryUpdateHandle !== null) return;
+
+    masonryUpdateHandle = requestAnimationFrame(() => {
+        masonryUpdateHandle = null;
+        updateMasonrySpans();
+    });
+};
+
+// Media arrives after render (and lazily while scrolling), so re-measure as each item loads.
+const watchMasonryMedia = (container) => {
+    container.querySelectorAll(".holder img").forEach((image) => {
+        if (image.complete) return;
+        image.addEventListener("load", scheduleMasonryUpdate, { once: true });
+        image.addEventListener("error", scheduleMasonryUpdate, { once: true });
+    });
+
+    container.querySelectorAll(".holder video").forEach((video) => {
+        video.addEventListener("loadedmetadata", scheduleMasonryUpdate, { once: true });
+    });
+
+    container.querySelectorAll(".holder gif-player").forEach((player) => {
+        player.addEventListener("gif-loaded", scheduleMasonryUpdate, { once: true });
+    });
+};
+
+window.addEventListener("resize", () => {
+    if (masonryResizeTimer) {
+        clearTimeout(masonryResizeTimer);
+    }
+    masonryResizeTimer = setTimeout(scheduleMasonryUpdate, 150);
+});
+
+const applyLayoutMode = (mode, { animate = false } = {}) => {
+    activeLayoutMode = mode === LAYOUT_MODES.FIXED ? LAYOUT_MODES.FIXED : LAYOUT_MODES.MASONRY;
+    const useFixedLayout = isFixedLayoutActive();
+
+    cardContainer.classList.toggle(LAYOUT_FIXED_CLASS, useFixedLayout);
+
+    if (!useFixedLayout) {
+        scheduleMasonryUpdate();
+    }
+
+    const toggle = document.getElementById("layoutToggle");
+    if (toggle) {
+        toggle.checked = useFixedLayout;
+    }
+
+    const subLabel = document.getElementById("layoutOptionSub");
+    if (subLabel) {
+        subLabel.textContent = useFixedLayout ? "Uniform 4:3 grid" : "Original layout";
+    }
+
+    if (animate) {
+        animateLayoutChange();
+    }
+
+    refreshGridGifCanvases();
+};
+
+const setupLayoutMenu = () => {
+    const menu = document.getElementById("layoutMenu");
+    const trigger = document.getElementById("layoutMenuButton");
+    const toggle = document.getElementById("layoutToggle");
+    if (!menu || !trigger || !toggle) return;
+
+    const isMenuOpen = () => menu.classList.contains("open");
+
+    const setMenuOpen = (shouldOpen) => {
+        menu.classList.toggle("open", shouldOpen);
+        trigger.setAttribute("aria-expanded", String(shouldOpen));
+    };
+
+    trigger.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setMenuOpen(!isMenuOpen());
+    });
+
+    // Click anywhere outside the menu to close it.
+    document.addEventListener("click", (event) => {
+        if (!isMenuOpen()) return;
+        if (event.target instanceof Node && menu.contains(event.target)) return;
+        setMenuOpen(false);
+    });
+
+    document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape" || !isMenuOpen()) return;
+        setMenuOpen(false);
+        trigger.focus();
+    });
+
+    toggle.addEventListener("change", (event) => {
+        const nextMode = event.target.checked ? LAYOUT_MODES.FIXED : LAYOUT_MODES.MASONRY;
+        storeLayoutMode(nextMode);
+        applyLayoutMode(nextMode, { animate: true });
+    });
+
+    applyLayoutMode(activeLayoutMode);
+};
+
+setupLayoutMenu();
+
 const readFileAsLibraryEntry = (file) => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -989,7 +1251,10 @@ const renderImages = () => {
         }
     });
 
+    // Rebuilding the markup drops the measured spans, so restore each card's own known
+    // height right away instead of letting the gallery jump to the fallback size.
     cardContainer.innerHTML = images;
+    applyCachedMasonrySpans();
     cardContainer.querySelectorAll("img[data-fallback]").forEach((img) => {
         const fallback = img.dataset.fallback;
         if (!fallback) return;
@@ -1002,6 +1267,8 @@ const renderImages = () => {
     applyGifInteractionMode(cardContainer);
     setupGridGifSizing(cardContainer);
     observeHiddenElements();
+    watchMasonryMedia(cardContainer);
+    scheduleMasonryUpdate();
 };
 
 // Updated showImages function
